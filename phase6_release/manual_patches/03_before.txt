@@ -1,0 +1,7 @@
+            case 'pro_versandklasse':
+            case 'pro_land':
+                // Zuordnung erfolgt über condition_text (z. B. Ländercode) –
+                // Basisbetrag hier nur als Fallback, konkrete Zuordnung
+                // erfolgt in der aufrufenden Stelle bei Bedarf.
+                $amount = (float)$rule['amount'];
+                break;

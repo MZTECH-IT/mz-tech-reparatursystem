@@ -59,117 +59,6 @@ function procurement_suggestion_for_repair(int $repairId): array {
     return $suggestions;
 }
 
-/**
- * Ermittelt ALLE Artikel, deren verfuegbarer Bestand (stock_quantity -
- * reserved_stock) den hinterlegten Mindestbestand (min_stock) unterschreitet,
- * unabhaengig von einer konkreten Reparatur - im Unterschied zu
- * procurement_suggestion_for_repair() oben. Nutzt fuer die
- * Lieferantenempfehlung dieselbe, bereits vorhandene Funktion
- * product_suggest_best_supplier().
- */
-function procurement_suggestions_low_stock(): array {
-    $db = get_db();
-    $stmt = $db->query(
-        'SELECT id, sku, name, stock_quantity, reserved_stock, min_stock
-           FROM parts
-          WHERE min_stock > 0
-            AND is_discontinued = 0
-            AND (stock_quantity - COALESCE(reserved_stock, 0)) < min_stock'
-    );
-    $parts = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $suggestions = [];
-    foreach ($parts as $part) {
-        $available = max(0, (int)$part['stock_quantity'] - (int)($part['reserved_stock'] ?? 0));
-        $missing = max(0, (int)$part['min_stock'] - $available);
-        if ($missing <= 0) continue;
-        $suggestions[] = [
-            'part_id'   => (int)$part['id'],
-            'sku'       => $part['sku'],
-            'name'      => $part['name'],
-            'available' => $available,
-            'min_stock' => (int)$part['min_stock'],
-            'missing'   => $missing,
-            'recommended_offer' => product_suggest_best_supplier((int)$part['id']),
-        ];
-    }
-    return $suggestions;
-}
-
-/**
- * Ermittelt ALLE Artikel, deren verfuegbarer Bestand (stock_quantity -
- * reserved_stock) den hinterlegten Mindestbestand (min_stock) unterschreitet,
- * unabhaengig von einer konkreten Reparatur - im Unterschied zu
- * procurement_suggestion_for_repair() oben. Nutzt fuer die
- * Lieferantenempfehlung dieselbe, bereits vorhandene Funktion
- * product_suggest_best_supplier().
- */
-function procurement_suggestions_low_stock(): array {
-    $db = get_db();
-    $stmt = $db->query(
-        'SELECT id, sku, name, stock_quantity, reserved_stock, min_stock
-           FROM parts
-          WHERE min_stock > 0
-            AND is_discontinued = 0
-            AND (stock_quantity - COALESCE(reserved_stock, 0)) < min_stock'
-    );
-    $parts = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $suggestions = [];
-    foreach ($parts as $part) {
-        $available = max(0, (int)$part['stock_quantity'] - (int)($part['reserved_stock'] ?? 0));
-        $missing = max(0, (int)$part['min_stock'] - $available);
-        if ($missing <= 0) continue;
-        $suggestions[] = [
-            'part_id'   => (int)$part['id'],
-            'sku'       => $part['sku'],
-            'name'      => $part['name'],
-            'available' => $available,
-            'min_stock' => (int)$part['min_stock'],
-            'missing'   => $missing,
-            'recommended_offer' => product_suggest_best_supplier((int)$part['id']),
-        ];
-    }
-    return $suggestions;
-}
-
-/**
- * Ermittelt ALLE Artikel, deren verfuegbarer Bestand (stock_quantity -
- * reserved_stock) den hinterlegten Mindestbestand (min_stock) unterschreitet,
- * unabhaengig von einer konkreten Reparatur - im Unterschied zu
- * procurement_suggestion_for_repair() oben. Nutzt fuer die
- * Lieferantenempfehlung dieselbe, bereits vorhandene Funktion
- * product_suggest_best_supplier().
- */
-function procurement_suggestions_low_stock(): array {
-    $db = get_db();
-    $stmt = $db->query(
-        'SELECT id, sku, name, stock_quantity, reserved_stock, min_stock
-           FROM parts
-          WHERE min_stock > 0
-            AND is_discontinued = 0
-            AND (stock_quantity - COALESCE(reserved_stock, 0)) < min_stock'
-    );
-    $parts = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $suggestions = [];
-    foreach ($parts as $part) {
-        $available = max(0, (int)$part['stock_quantity'] - (int)($part['reserved_stock'] ?? 0));
-        $missing = max(0, (int)$part['min_stock'] - $available);
-        if ($missing <= 0) continue;
-        $suggestions[] = [
-            'part_id'   => (int)$part['id'],
-            'sku'       => $part['sku'],
-            'name'      => $part['name'],
-            'available' => $available,
-            'min_stock' => (int)$part['min_stock'],
-            'missing'   => $missing,
-            'recommended_offer' => product_suggest_best_supplier((int)$part['id']),
-        ];
-    }
-    return $suggestions;
-}
-
 // ── Bestellungen CRUD ────────────────────────────────────────────────────
 
 function purchase_orders_list(array $filters = []): array {
@@ -355,44 +244,36 @@ function purchase_order_set_status(int $orderId, string $status): void {
 
 function purchase_order_item_receive(int $itemId, int $receivedQuantity): void {
     $db = get_db();
-    $db->beginTransaction();
-    try {
-        $stmt = $db->prepare('SELECT * FROM purchase_order_items WHERE id = ?');
-        $stmt->execute([$itemId]);
-        $item = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$item) { $db->rollBack(); return; }
+    $stmt = $db->prepare('SELECT * FROM purchase_order_items WHERE id = ?');
+    $stmt->execute([$itemId]);
+    $item = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$item) return;
 
-        $newReceived = max(0, min($receivedQuantity, (int)$item['quantity']));
-        $db->prepare('UPDATE purchase_order_items SET quantity_received = ? WHERE id = ?')->execute([$newReceived, $itemId]);
+    $newReceived = max(0, min($receivedQuantity, (int)$item['quantity']));
+    $db->prepare('UPDATE purchase_order_items SET quantity_received = ? WHERE id = ?')->execute([$newReceived, $itemId]);
 
-        // Lagerbestand des zentralen Produkts bei Wareneingang erhöhen (nur
-        // die tatsächlich neu eingegangene Differenz, nicht die Gesamtmenge).
-        $delta = $newReceived - (int)$item['quantity_received'];
-        if ($delta !== 0) {
-            // (quantity_received wurde oben bereits überschrieben – Differenz
-            // daher hier separat aus dem VOR der Aktualisierung gelesenen Wert
-            // berechnet, siehe $item['quantity_received'] oben.)
-            $db->prepare('UPDATE parts SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$delta, $item['part_id']]);
+    // Lagerbestand des zentralen Produkts bei Wareneingang erhöhen (nur
+    // die tatsächlich neu eingegangene Differenz, nicht die Gesamtmenge).
+    $delta = $newReceived - (int)$item['quantity_received'];
+    if ($delta !== 0) {
+        // (quantity_received wurde oben bereits überschrieben – Differenz
+        // daher hier separat aus dem VOR der Aktualisierung gelesenen Wert
+        // berechnet, siehe $item['quantity_received'] oben.)
+        $db->prepare('UPDATE parts SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$delta, $item['part_id']]);
+    }
+
+    // Bestellstatus aktualisieren: alle Positionen vollständig geliefert?
+    $order = purchase_order_find((int)$item['purchase_order_id']);
+    if ($order) {
+        $items = purchase_order_items_list((int)$order['id']);
+        $allDelivered = true;
+        $anyDelivered = false;
+        foreach ($items as $i) {
+            if ((int)$i['quantity_received'] < (int)$i['quantity']) $allDelivered = false;
+            if ((int)$i['quantity_received'] > 0) $anyDelivered = true;
         }
-
-        // Bestellstatus aktualisieren: alle Positionen vollständig geliefert?
-        $order = purchase_order_find((int)$item['purchase_order_id']);
-        if ($order) {
-            $items = purchase_order_items_list((int)$order['id']);
-            $allDelivered = true;
-            $anyDelivered = false;
-            foreach ($items as $i) {
-                if ((int)$i['quantity_received'] < (int)$i['quantity']) $allDelivered = false;
-                if ((int)$i['quantity_received'] > 0) $anyDelivered = true;
-            }
-            if ($allDelivered) purchase_order_set_status((int)$order['id'], 'geliefert');
-            elseif ($anyDelivered) purchase_order_set_status((int)$order['id'], 'teilweise_geliefert');
-        }
-
-        $db->commit();
-    } catch (Throwable $e) {
-        $db->rollBack();
-        throw $e;
+        if ($allDelivered) purchase_order_set_status((int)$order['id'], 'geliefert');
+        elseif ($anyDelivered) purchase_order_set_status((int)$order['id'], 'teilweise_geliefert');
     }
 }
 
@@ -487,39 +368,11 @@ function purchase_order_calculate_shipping(int $supplierId, array $items): array
                 $amount += (float)$rule['amount'];
                 break;
             case 'pro_versandklasse':
-                // Konsistent mit der Zuschlags-Heuristik oben: condition_text
-                // als Schlagwort gegen die Positions-Notiz (notes) geprüft,
-                // da es aktuell kein eigenes Versandklassen-Feld je Artikel
-                // gibt (bewusst keine neue Spalte eingeführt).
-                $needle = trim((string)($rule['condition_text'] ?? ''));
-                if ($needle !== '') {
-                    foreach ($items as $item) {
-                        $noteHaystack = mb_strtolower((string)($item['notes'] ?? ''));
-                        if ($noteHaystack !== '' && str_contains($noteHaystack, mb_strtolower($needle))) {
-                            $amount = (float)$rule['amount'];
-                            break;
-                        }
-                    }
-                } else {
-                    $amount = (float)$rule['amount'];
-                }
-                break;
             case 'pro_land':
-                // condition_text wird gegen das Herkunftsland des Lieferanten
-                // (suppliers.address_country, bereits vorhanden seit Phase 2a)
-                // verglichen -- nicht gegen ein Zielland, da dieses System
-                // Bestellungen fuer einen einzelnen Betrieb abbildet.
-                $needle = trim((string)($rule['condition_text'] ?? ''));
-                if ($needle !== '') {
-                    $stmtCountry = get_db()->prepare('SELECT address_country FROM suppliers WHERE id = ?');
-                    $stmtCountry->execute([$supplierId]);
-                    $supplierCountry = (string)($stmtCountry->fetchColumn() ?: '');
-                    if (strcasecmp(trim($supplierCountry), $needle) === 0) {
-                        $amount = (float)$rule['amount'];
-                    }
-                } else {
-                    $amount = (float)$rule['amount'];
-                }
+                // Zuordnung erfolgt über condition_text (z. B. Ländercode) –
+                // Basisbetrag hier nur als Fallback, konkrete Zuordnung
+                // erfolgt in der aufrufenden Stelle bei Bedarf.
+                $amount = (float)$rule['amount'];
                 break;
         }
     }

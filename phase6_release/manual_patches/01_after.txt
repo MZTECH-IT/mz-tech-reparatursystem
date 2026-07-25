@@ -1,0 +1,76 @@
+class SftpAdapter implements SupplierAdapterInterface {
+    /**
+     * Nutzt die PHP-Erweiterung "ssh2", sofern vorhanden. Ist sie nicht
+     * installiert (wie auf dem in INSTALLATION.md beschriebenen All-Inkl-
+     * Produktivserver zum Zeitpunkt der urspruenglichen Analyse), wird
+     * KEIN Fehler geworfen, sondern eine klare, umsetzbare Fehlermeldung
+     * zurueckgegeben -- konsistent mit dem bisherigen Verhalten dieser
+     * Klasse, das bewusst kein Fatal Error erzeugt.
+     */
+    public function testConnection(array $profile, array $credentials): array {
+        if (!function_exists('ssh2_connect')) {
+            return ['success' => false, 'message' => 'SFTP ist auf diesem Server nicht verfügbar (PHP-Erweiterung "ssh2" fehlt). Bitte Hoster kontaktieren oder FTPS/HTTPS-Download als Alternative verwenden.'];
+        }
+        $host = trim((string)($profile['ftp_host'] ?? ''));
+        $port = (int)($profile['ftp_port'] ?? 22) ?: 22;
+        if ($host === '') {
+            return ['success' => false, 'message' => 'Kein SFTP-Host hinterlegt.'];
+        }
+        $connection = @ssh2_connect($host, $port);
+        if ($connection === false) {
+            return ['success' => false, 'message' => 'SFTP-Verbindung zu ' . $host . ':' . $port . ' fehlgeschlagen.'];
+        }
+        $user = $credentials['username'] ?? '';
+        $pass = $credentials['password'] ?? '';
+        if ($user === '') {
+            return ['success' => false, 'message' => 'Kein SFTP-Benutzername hinterlegt.'];
+        }
+        $authOk = @ssh2_auth_password($connection, $user, $pass);
+        if (!$authOk) {
+            return ['success' => false, 'message' => 'SFTP-Anmeldung für Benutzer "' . $user . '" fehlgeschlagen.'];
+        }
+        $sftp = @ssh2_sftp($connection);
+        if ($sftp === false) {
+            return ['success' => false, 'message' => 'SFTP-Subsystem konnte nicht initialisiert werden.'];
+        }
+        return ['success' => true, 'message' => 'SFTP-Verbindung erfolgreich hergestellt.'];
+    }
+
+    public function fetchPayload(array $profile, array $credentials): array {
+        if (!function_exists('ssh2_connect')) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SFTP ist auf diesem Server aktuell nicht verfügbar (siehe testConnection()).'];
+        }
+        $host = trim((string)($profile['ftp_host'] ?? ''));
+        $port = (int)($profile['ftp_port'] ?? 22) ?: 22;
+        $path = trim((string)($profile['ftp_path'] ?? ''));
+        if ($host === '' || $path === '') {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SFTP-Host oder Dateipfad fehlt im Schnittstellenprofil.'];
+        }
+        $connection = @ssh2_connect($host, $port);
+        if ($connection === false) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SFTP-Verbindung zu ' . $host . ':' . $port . ' fehlgeschlagen.'];
+        }
+        $user = $credentials['username'] ?? '';
+        $pass = $credentials['password'] ?? '';
+        if (!@ssh2_auth_password($connection, $user, $pass)) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SFTP-Anmeldung fehlgeschlagen.'];
+        }
+        $sftp = @ssh2_sftp($connection);
+        if ($sftp === false) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SFTP-Subsystem konnte nicht initialisiert werden.'];
+        }
+        // ssh2.sftp:// Stream-Wrapper nutzen, analog zum bestehenden
+        // FtpAdapter-Muster (temporaeres Lesen ueber PHP-Streams statt
+        // manueller Socket-Verwaltung).
+        $stream = @fopen('ssh2.sftp://' . intval($sftp) . $path, 'r');
+        if ($stream === false) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'Datei "' . $path . '" konnte per SFTP nicht geöffnet werden.'];
+        }
+        $raw = stream_get_contents($stream);
+        fclose($stream);
+        if ($raw === false) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'Datei "' . $path . '" konnte per SFTP nicht gelesen werden.'];
+        }
+        return ['success' => true, 'raw' => $raw, 'filename' => basename($path), 'message' => 'SFTP-Download erfolgreich.'];
+    }
+}

@@ -1,0 +1,35 @@
+            case 'pro_versandklasse':
+                // Konsistent mit der Zuschlags-Heuristik oben: condition_text
+                // als Schlagwort gegen die Positions-Notiz (notes) geprüft,
+                // da es aktuell kein eigenes Versandklassen-Feld je Artikel
+                // gibt (bewusst keine neue Spalte eingeführt).
+                $needle = trim((string)($rule['condition_text'] ?? ''));
+                if ($needle !== '') {
+                    foreach ($items as $item) {
+                        $noteHaystack = mb_strtolower((string)($item['notes'] ?? ''));
+                        if ($noteHaystack !== '' && str_contains($noteHaystack, mb_strtolower($needle))) {
+                            $amount = (float)$rule['amount'];
+                            break;
+                        }
+                    }
+                } else {
+                    $amount = (float)$rule['amount'];
+                }
+                break;
+            case 'pro_land':
+                // condition_text wird gegen das Herkunftsland des Lieferanten
+                // (suppliers.address_country, bereits vorhanden seit Phase 2a)
+                // verglichen -- nicht gegen ein Zielland, da dieses System
+                // Bestellungen fuer einen einzelnen Betrieb abbildet.
+                $needle = trim((string)($rule['condition_text'] ?? ''));
+                if ($needle !== '') {
+                    $stmtCountry = get_db()->prepare('SELECT address_country FROM suppliers WHERE id = ?');
+                    $stmtCountry->execute([$supplierId]);
+                    $supplierCountry = (string)($stmtCountry->fetchColumn() ?: '');
+                    if (strcasecmp(trim($supplierCountry), $needle) === 0) {
+                        $amount = (float)$rule['amount'];
+                    }
+                } else {
+                    $amount = (float)$rule['amount'];
+                }
+                break;

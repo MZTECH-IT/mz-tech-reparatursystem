@@ -1,0 +1,41 @@
+        $suggestions[] = $suggestion;
+    }
+    return $suggestions;
+}
+
+/**
+ * Ermittelt ALLE Artikel, deren verfuegbarer Bestand (stock_quantity -
+ * reserved_stock) den hinterlegten Mindestbestand (min_stock) unterschreitet,
+ * unabhaengig von einer konkreten Reparatur - im Unterschied zu
+ * procurement_suggestion_for_repair() oben. Nutzt fuer die
+ * Lieferantenempfehlung dieselbe, bereits vorhandene Funktion
+ * product_suggest_best_supplier().
+ */
+function procurement_suggestions_low_stock(): array {
+    $db = get_db();
+    $stmt = $db->query(
+        'SELECT id, sku, name, stock_quantity, reserved_stock, min_stock
+           FROM parts
+          WHERE min_stock > 0
+            AND is_discontinued = 0
+            AND (stock_quantity - COALESCE(reserved_stock, 0)) < min_stock'
+    );
+    $parts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $suggestions = [];
+    foreach ($parts as $part) {
+        $available = max(0, (int)$part['stock_quantity'] - (int)($part['reserved_stock'] ?? 0));
+        $missing = max(0, (int)$part['min_stock'] - $available);
+        if ($missing <= 0) continue;
+        $suggestions[] = [
+            'part_id'   => (int)$part['id'],
+            'sku'       => $part['sku'],
+            'name'      => $part['name'],
+            'available' => $available,
+            'min_stock' => (int)$part['min_stock'],
+            'missing'   => $missing,
+            'recommended_offer' => product_suggest_best_supplier((int)$part['id']),
+        ];
+    }
+    return $suggestions;
+}

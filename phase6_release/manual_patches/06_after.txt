@@ -1,0 +1,36 @@
+require_once __DIR__ . '/init.php';
+require_permission('manage_purchase_orders');
+
+// Integrationsphase / Phase 3: Bestell-Entwurf aus Nachbestell-Vorschlaegen
+// anlegen. Rein additiv - bestehende GET-Listenansicht dieser Seite bleibt
+// unveraendert.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create_draft_from_suggestion') {
+    verify_csrf();
+    $supplierId = (int)($_POST['supplier_id'] ?? 0);
+    $partIds = array_map('intval', (array)($_POST['part_id'] ?? []));
+    $qtyOverrides = (array)($_POST['qty'] ?? []);
+    if ($supplierId > 0 && !empty($partIds)) {
+        $items = [];
+        foreach (procurement_suggestions_low_stock() as $s) {
+            if (!in_array($s['part_id'], $partIds, true)) continue;
+            $offer = $s['recommended_offer']['offer'] ?? null;
+            if (!$offer || (int)($offer['supplier_id'] ?? 0) !== $supplierId) continue;
+            $qty = isset($qtyOverrides[$s['part_id']]) ? max(1, (int)$qtyOverrides[$s['part_id']]) : $s['missing'];
+            $items[] = [
+                'part_id'           => $s['part_id'],
+                'supplier_offer_id' => $offer['id'],
+                'quantity'          => $qty,
+                'assigned_stock'    => 1,
+                'notes'             => 'Automatischer Bestellvorschlag (Mindestbestand unterschritten)',
+            ];
+        }
+        if ($items) {
+            $orderId = purchase_order_create_draft($supplierId, $items, $_SESSION['user_id'] ?? null);
+            flash('success', count($items) . ' Position(en) als Bestell-Entwurf #' . $orderId . ' angelegt.');
+        } else {
+            flash('error', 'Keine passenden Vorschlaege fuer diesen Lieferanten gefunden.');
+        }
+    }
+    header('Location: purchase_orders.php');
+    exit;
+}

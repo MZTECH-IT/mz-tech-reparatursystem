@@ -1,0 +1,24 @@
+    if ($zip->open($tmp) !== true) {
+        @unlink($tmp);
+        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv konnte nicht geöffnet werden.'];
+    }
+    $maxEntries = 500;
+    $maxUncompressedBytes = 100 * 1024 * 1024; // 100 MB
+    if ($zip->numFiles > $maxEntries) {
+        $zip->close();
+        @unlink($tmp);
+        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv enthaelt zu viele Dateien (' . $zip->numFiles . ', Maximum ' . $maxEntries . ').'];
+    }
+    $totalUncompressed = 0;
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $stat = $zip->statIndex($i);
+        if ($stat !== false) {
+            $totalUncompressed += (int)$stat['size'];
+        }
+    }
+    if ($totalUncompressed > $maxUncompressedBytes) {
+        $zip->close();
+        @unlink($tmp);
+        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv ist unkomprimiert zu groß (Limit ' . round($maxUncompressedBytes / 1024 / 1024) . ' MB).'];
+    }
+    $innerName = null;
