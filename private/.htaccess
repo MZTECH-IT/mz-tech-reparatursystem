@@ -1,0 +1,6 @@
+# Defense-in-depth: dieses Verzeichnis liegt bereits ausserhalb des Webroots
+# und ist damit über HTTP nicht erreichbar. Diese .htaccess verhindert
+# zusätzlich jeglichen Zugriff, falls die Docroot-Konfiguration sich je ändert.
+Require all denied
+Order deny,allow
+Deny from all

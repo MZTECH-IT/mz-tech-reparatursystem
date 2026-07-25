@@ -1,0 +1,21 @@
+# Kundendateien und Uploads
+/uploads/
+
+# Sicherungen
+/backups/
+*.sql.gz
+*.zip
+
+# Protokolle
+/logs/
+*.log
+
+# Zugangsdaten und lokale Konfiguration
+.env
+.env.*
+/private/config.php
+
+# Editor und Windows
+.vscode/
+Thumbs.db
+.DS_Store

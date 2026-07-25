@@ -1,0 +1,64 @@
+# ── MZ Tech Repair System – Apache Security ───────────
+Options -Indexes -ExecCGI
+
+# HTTPS erzwingen
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Direkt-Upload-URL blockieren
+RewriteRule ^upload/ - [F,L]
+
+# ── Security Header ───────────────────────────────────
+<IfModule mod_headers.c>
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+    Header always set X-Frame-Options "DENY"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self';"
+    # Sensible Header entfernen
+    Header unset X-Powered-By
+    Header unset Server
+</IfModule>
+
+# ── PHP-Einstellungen ─────────────────────────────────
+<IfModule mod_php.c>
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_value upload_max_filesize 10M
+    php_value post_max_size 12M
+    php_value max_execution_time 60
+</IfModule>
+
+# ── Dateischutz ───────────────────────────────────────
+<FilesMatch "\.(sql|log|bak|sh|env|json|lock)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+<FilesMatch "^(config|db|functions|auth|mailer)\.php$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# ── Kein Zugriff auf versteckte Dateien ───────────────
+<FilesMatch "^\.">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# ── Gzip-Komprimierung ────────────────────────────────
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript
+</IfModule>
+
+# ── Browser-Cache ─────────────────────────────────────
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css             "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType image/jpeg           "access plus 1 month"
+    ExpiresByType image/png            "access plus 1 month"
+</IfModule>
