@@ -1,0 +1,11 @@
+class SftpAdapter implements SupplierAdapterInterface {
+    public function testConnection(array $profile, array $credentials): array {
+        if (function_exists('ssh2_connect')) {
+            return ['success' => false, 'message' => 'SFTP-Erweiterung (ssh2) erkannt, Verbindungslogik muss lieferantenspezifisch ergänzt werden (siehe SCHNITTSTELLEN_ADAPTER_DOKUMENTATION.txt).'];
+        }
+        return ['success' => false, 'message' => 'SFTP ist auf diesem Server nicht verfügbar (PHP-Erweiterung "ssh2" bzw. phpseclib fehlt). Bitte Hoster kontaktieren oder FTPS/HTTPS-Download als Alternative verwenden.'];
+    }
+    public function fetchPayload(array $profile, array $credentials): array {
+        return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SFTP ist auf diesem Server aktuell nicht verfügbar (siehe testConnection()).'];
+    }
+}

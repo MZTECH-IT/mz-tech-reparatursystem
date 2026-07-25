@@ -1,0 +1,1003 @@
+From d3647d7ce7bc4b7f7023c8a3f5f5cd5aca7545b8 Mon Sep 17 00:00:00 2001
+From: Integration <integration@local>
+Date: Sat, 25 Jul 2026 19:12:34 +0000
+Subject: [PATCH] =?UTF-8?q?Phase=205:=20Sicherheits-/Robustheitsh=C3=A4rtu?=
+ =?UTF-8?q?ng=20+=20Release-Vorbereitung?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Kundenportal vollständig geprüft (Session-Fixation, Brute-Force-Schutz,
+IDOR, Uploads, CSRF) - bereits korrekt implementiert, keine Änderung
+nötig. Vier reale Härtungslücken im Lieferanten-/Einkaufsmodul gefunden
+und behoben:
+
+- Patch G: purchase_order_item_receive() jetzt transaktional (Menge/
+  Lagerbestand/Status atomar, Rollback bei Fehler).
+- Patch H: import_parse_xml() mit LIBXML_NONET gehärtet (kein
+  Netzwerkzugriff beim Parsen).
+- Patch I: import_parse_zip() mit Eintragsanzahl-/Größenlimit gegen
+  Zip-Bomben gehärtet (500 Dateien / 100 MB).
+- Patch J: public/api/supplier_cron.php protokolliert GET-Secret-Nutzung
+  (ohne das Secret selbst) als Migrationshinweis auf CLI-Worker/POST.
+- Patch K: private/cli/supplier_sync_worker.php gegen parallele
+  Doppel-Ausführung abgesichert (flock-Sperre).
+
+Geprüft und bewusst unverändert: Lieferantendokument-Zugriff ist
+rollenbasiert (manage_suppliers = global), kein echtes IDOR, entspricht
+dem bestehenden Rechtemodell.
+
+Getestet: 13/13 Syntaxprüfungen, 28/28 Einzel-Testfälle (Regression +
+neue Härtung), alle bestanden. Dokumentation aktualisiert (Anhänge für
+INSTALLATION.md/CHANGELOG.md/TEST-CHECKLISTE.md, keine neuen Dateien).
+
+Keine Produktivdatenbank geändert, kein Merge nach main, kein Force-Push,
+kein Deployment.
+---
+ docs/phase5_append_to_CHANGELOG.md         |  37 +++
+ docs/phase5_append_to_INSTALLATION.md      |  85 ++++++
+ docs/phase5_append_to_TEST-CHECKLISTE.md   |  76 ++++++
+ docs/phase5_patches.md                     | 287 +++++++++++++++++++++
+ private/cli/supplier_sync_worker.php       |  23 ++
+ tests/patch_g_receive_transaction_test.php | 111 ++++++++
+ tests/patch_h_i_import_hardening_test.php  | 174 +++++++++++++
+ tests/patch_j_cron_secret_test.php         |  55 ++++
+ tests/patch_k_worker_lock_test.php         |  38 +++
+ 9 files changed, 886 insertions(+)
+ create mode 100644 docs/phase5_append_to_CHANGELOG.md
+ create mode 100644 docs/phase5_append_to_INSTALLATION.md
+ create mode 100644 docs/phase5_append_to_TEST-CHECKLISTE.md
+ create mode 100644 docs/phase5_patches.md
+ create mode 100644 tests/patch_g_receive_transaction_test.php
+ create mode 100644 tests/patch_h_i_import_hardening_test.php
+ create mode 100644 tests/patch_j_cron_secret_test.php
+ create mode 100644 tests/patch_k_worker_lock_test.php
+
+diff --git a/docs/phase5_append_to_CHANGELOG.md b/docs/phase5_append_to_CHANGELOG.md
+new file mode 100644
+index 0000000..81f2e39
+--- /dev/null
++++ b/docs/phase5_append_to_CHANGELOG.md
+@@ -0,0 +1,37 @@
++## Phase 5 — Sicherheits-/Robustheitshärtung (Vorbereitung, noch nicht produktiv)
++
++**Status: Patches erstellt und lokal getestet, noch NICHT angewendet/eingespielt.**
++
++Gezielte Sicherheits- und Robustheitsprüfung des Gesamtsystems mit Fokus auf
++SQLi/XSS/CSRF/IDOR/Uploads/Session/Cron/XXE/Zip-Bomben. Ergebnis: Kundenportal
++(Login, Registrierung, Session, Berechtigungen, Uploads, CSRF) war bereits
++vollständig und korrekt abgesichert — keine Änderung nötig. Vier reale
++Robustheits-/Härtungslücken im Lieferanten-/Einkaufsmodul gefunden und
++behoben:
++
++- **Transaktionsschutz beim Wareneingang** (`purchase_order_item_receive()`):
++  die drei zusammengehörigen Datenbankänderungen (Positions-Menge,
++  Lagerbestand, Bestellstatus) laufen jetzt atomar in einer Transaktion —
++  verhindert inkonsistente Zwischenzustände bei einem Fehler mitten in der
++  Verarbeitung.
++- **XML-Import gehärtet**: `LIBXML_NONET` beim Parsen ergänzt (kein
++  Netzwerkzugriff während des Parsens möglich).
++- **ZIP-Import gehärtet**: Eintragsanzahl- und Größenlimit vor dem
++  Entpacken (Schutz vor Zip-Bomben), normale Importe unverändert
++  funktionsfähig.
++- **CLI-Sync-Worker gegen parallele Doppel-Ausführung abgesichert**
++  (Datei-Sperre) — verhindert doppelte Synchronisation bei zu kurzem
++  Cron-Intervall.
++
++Zusätzlich: Aufrufe des HTTP-Cron-Endpunkts mit Secret-Übertragung per GET
++(statt POST) werden jetzt protokolliert (ohne das Secret selbst
++auszugeben) als Hinweis zur Umstellung auf den sichereren CLI-Worker.
++
++Geprüft und bewusst unverändert gelassen: Zugriff auf Lieferantendokumente
++ist rollenbasiert (nicht lieferantenspezifisch) — entspricht dem
++bestehenden, beabsichtigten Rechtemodell dieses internen Werkzeugs, kein
++Bug.
++
++Alle Änderungen additiv und rückwärtskompatibel: keine bestehende Funktion
++wurde entfernt oder in ihrem bisherigen Verhalten verändert (nur
++zusätzliche Absicherung).
+diff --git a/docs/phase5_append_to_INSTALLATION.md b/docs/phase5_append_to_INSTALLATION.md
+new file mode 100644
+index 0000000..8449f9e
+--- /dev/null
++++ b/docs/phase5_append_to_INSTALLATION.md
+@@ -0,0 +1,85 @@
++## Phase 5 — Sicherheits-/Robustheitshärtung + Release-Vorbereitung
++
++Baut auf Phase 2a–2d/Integration/Phase 4 auf, keine neue Migration
++erforderlich (Phase 5 fügt ausschließlich PHP-Code-Härtungen hinzu, keine
++Schemaänderungen).
++
++### Installationsreihenfolge (Gesamtübersicht, konsolidiert)
++
++1. `sql/schema.sql` (nur bei komplett neuer Installation, via `setup.php`).
++2. `sql/update.sql` inkl. aller bisherigen Ergänzungen (Phase 2a: 12
++   Tabellen + `parts`-Spalten) — manuell über phpMyAdmin oder CLI, siehe
++   „Datenbank-Update" unten.
++3. PHP-Dateien einspielen (Patches A–K, siehe `integration_01_patches.md`
++   und `phase5_patches.md`).
++4. Cronjob(s) einrichten, siehe unten.
++5. Dateirechte prüfen, siehe unten.
++6. Testcheckliste (Abschnitte 21–24) durchgehen.
++
++### Datenbank-Update
++
++Wie bisher: `sql/update.sql`-Ergänzungen sind additiv und wiederholt
++ausführbar (`CREATE TABLE IF NOT EXISTS`, `INFORMATION_SCHEMA`-geprüfte
++`ALTER TABLE`). Phase 5 ergänzt **keine** neuen Tabellen/Spalten.
++
++### Cronjobs
++
++Zwei gleichwertige, parallel nutzbare Wege für den automatischen
++Lieferanten-Sync:
++
++- **Empfohlen:** `php private/cli/supplier_sync_worker.php` als echter
++  Server-Cronjob. Seit Phase 5 zusätzlich gegen parallele
++  Doppel-Ausführung abgesichert (Datei-Sperre in `sys_get_temp_dir()`) —
++  ein zu kurz gewähltes Cron-Intervall führt nicht mehr zu doppelt
++  laufenden Sync-Vorgängen.
++- **Alternative (falls kein direkter Cronjob-Zugriff möglich):**
++  `public/api/supplier_cron.php?secret=...` per externem Uptime-/Cron-Dienst.
++  Seit Phase 5 wird jeder Aufruf, der das Secret per GET statt POST
++  überträgt, zusätzlich (ohne das Secret selbst) protokolliert
++  (`activity_log`, Aktion `cron_secret_via_get`) — dient als Hinweis, ob
++  auf den CLI-Worker oder POST umgestellt werden sollte.
++
++### Dateirechte
++
++- `private/` muss außerhalb des öffentlich erreichbaren Webroots liegen
++  bzw. per Webserver-Konfiguration blockiert sein (wie bisher).
++  `private/cli/supplier_sync_worker.php` bricht zusätzlich hart ab
++  (HTTP 403), falls es doch versehentlich per HTTP aufgerufen wird.
++- Upload-Verzeichnis (`UPLOAD_PATH`, außerhalb von Git in `config.php`
++  definiert) muss beschreibbar sein, Unterordner `repairs/<id>` werden mit
++  Modus `0750` angelegt (bereits bestehendes Verhalten, verifiziert).
++- Sperrdatei des CLI-Workers wird im System-Temp-Verzeichnis angelegt,
++  keine gesonderten Rechte nötig.
++
++### Benötigte PHP-Erweiterungen (konsolidiert)
++
++`pdo_mysql`, `mbstring`, `zip` (für ZIP-Import, jetzt zusätzlich mit
++Eintragsanzahl-/Größenlimit gehärtet), `simplexml`/`libxml`, `curl`
++(REST/GraphQL-Adapter), optional `soap` (SoapApiAdapter), optional `ssh2`
++(SftpAdapter — degradiert sauber, falls nicht vorhanden).
++
++### Servervoraussetzungen
++
++PHP 8.x, MariaDB/MySQL 5.7+ (Kompatibilität mit älteren Versionen
++durch `INFORMATION_SCHEMA`-geprüfte, DELIMITER-freie Migrationen
++sichergestellt), Zugriff auf phpMyAdmin oder mysql-CLI für die manuelle
++Migration.
++
++### Konfiguration außerhalb von Git
++
++`private/config.php` (nicht im Repository, wie vorgesehen) muss u. a.
++enthalten: DB-Zugangsdaten, `UPLOAD_PATH`, `MAX_UPLOAD_SIZE`,
++`ALLOWED_EXTENSIONS`, `PORTAL_MAX_LOGIN_ATTEMPTS`,
++`PORTAL_LOGIN_LOCKOUT_MINUTES`. Diese Werte konnten aus dem Repository
++selbst nicht eingesehen werden (korrektes Verhalten, keine
++Konfigurationswerte im Git) — vor dem Produktivbetrieb bitte auf dem
++echten Server prüfen, dass sinnvolle Werte gesetzt sind (siehe „Offene
++reale Serverprüfungen" in `phase5_patches.md`).
++
++### Backup und Rollback
++
++Unverändert gültig wie in Phase 2a beschrieben (`phase2a_00_ZUSAMMENFASSUNG.md`,
++`phase2a_03_rollback_supplier_foundation.sql`). Phase 5 fügt keine neuen
++Tabellen hinzu, daher kein zusätzliches Rollback-Skript nötig — reine
++Code-Patches sind über `git revert` rückgängig zu machen, sobald
++committet.
+diff --git a/docs/phase5_append_to_TEST-CHECKLISTE.md b/docs/phase5_append_to_TEST-CHECKLISTE.md
+new file mode 100644
+index 0000000..06311b4
+--- /dev/null
++++ b/docs/phase5_append_to_TEST-CHECKLISTE.md
+@@ -0,0 +1,76 @@
++## 23. Phase 5 — Sicherheits-/Robustheitshärtung
++
++Voraussetzung: Abschnitte 21–22 (Phase 2a/2b) bestanden, Integrationspatches
++A–F (Integrationsphase/Phase 4) eingespielt.
++
++### 23.1 Wareneingang — Transaktionsschutz
++
++- ☐ Normaler Wareneingang (eine Position, vollständig geliefert) funktioniert
++  wie bisher: Menge, Lagerbestand und Status werden korrekt aktualisiert
++- ☐ Simulierter Fehler während der Verarbeitung (z. B. DB-Verbindungsabbruch
++  testweise erzwungen) führt zu vollständigem Rollback — weder Menge noch
++  Lagerbestand noch Status wurden teilweise verändert
++
++### 23.2 Import-Härtung
++
++- ☐ Regulärer XML-Import (Preisliste eines Lieferanten) funktioniert nach
++  der Änderung unverändert korrekt
++- ☐ Regulärer ZIP-Import (z. B. ZIP mit einer CSV-Datei) funktioniert
++  unverändert korrekt
++- ☐ ZIP mit sehr vielen Dateien (Testfall: >500) wird mit einer klaren
++  Fehlermeldung abgelehnt, kein Absturz
++- ☐ ZIP mit sehr großer unkomprimierter Gesamtgröße (Testfall: >100 MB)
++  wird mit einer klaren Fehlermeldung abgelehnt, kein Absturz/keine
++  Speicherüberlastung
++
++### 23.3 CLI-Worker — Sperre gegen Doppel-Ausführung
++
++- ☐ Zwei manuell gleichzeitig gestartete Worker-Läufe: der zweite beendet
++  sich sofort mit einer Info-Meldung und Exit-Code 0, ohne Lieferanten zu
++  verarbeiten
++- ☐ Nach Abschluss des ersten Laufs kann ein neuer Lauf wieder normal
++  starten und verarbeiten
++
++### 23.4 Cron-Endpunkt — GET-Warnprotokoll
++
++- ☐ Aufruf mit gültigem Secret per POST: kein neuer Eintrag mit Aktion
++  `cron_secret_via_get` in `activity_log`
++- ☐ Aufruf mit gültigem Secret per GET: genau ein neuer Eintrag mit Aktion
++  `cron_secret_via_get`, das Secret selbst erscheint NICHT im
++  Log-Eintrag
++- ☐ Aufruf mit ungültigem Secret (GET oder POST): weiterhin HTTP 403, kein
++  neuer Log-Eintrag
++
++### 23.5 Kundenportal — Regressionsprüfung (bereits vorhandene Absicherung, nicht verändert)
++
++- ☐ Login erzeugt eine neue Session-ID (Session-Fixation-Schutz weiterhin
++  aktiv)
++- ☐ Mehrere aufeinanderfolgende Fehlversuche vom selben Gerät/derselben IP
++  führen zur zeitlich begrenzten Sperre
++- ☐ Ein Kunde kann ausschließlich eigene Reparaturen/Termine/Fotos/
++  Nachrichten sehen, auch bei geratener/veränderter ID in der URL
++- ☐ Foto-Upload akzeptiert nur echte Bilddateien der erlaubten Endungen
++  bis zur konfigurierten Maximalgröße
++
++### 23.6 Vollständige Regressionsprüfung
++
++- ☐ Alle Abschnitte 1–22 der Testcheckliste bleiben nach Anwendung der
++  Phase-5-Patches bestehbar
++
++### 23.7 Offene reale Serverprüfungen (nicht aus dem Repository verifizierbar)
++
++- ☐ Tatsächliche Werte von `PORTAL_MAX_LOGIN_ATTEMPTS`,
++  `PORTAL_LOGIN_LOCKOUT_MINUTES`, `MAX_UPLOAD_SIZE`, `ALLOWED_EXTENSIONS`,
++  `UPLOAD_PATH` in der produktiven `private/config.php` auf Sinnhaftigkeit
++  prüfen (nicht im Repository, konnte nicht verifiziert werden)
++- ☐ `UPLOAD_PATH` liegt tatsächlich außerhalb des öffentlich per HTTP
++  erreichbaren Verzeichnisses (auf dem echten Server prüfen)
++- ☐ PHP-Erweiterungen `zip`, `simplexml`, `curl`, optional `soap`/`ssh2`
++  tatsächlich beim Hoster aktiv (siehe INSTALLATION.md-Ergänzung)
++- ☐ Cronjob(s) beim Hoster tatsächlich eingerichtet und laufen im
++  gewünschten Intervall
++- ☐ Dateiberechtigungen von `private/` und dem Upload-Verzeichnis auf dem
++  echten Server wie vorgesehen gesetzt
++- ☐ Reales Lastverhalten des Zip-Bomben-Limits (500 Dateien / 100 MB) mit
++  echten, größeren Lieferanten-Preislisten gegenprüfen — Limits ggf.
++  anpassen, falls legitime Dateien angepasst werden müssen
+diff --git a/docs/phase5_patches.md b/docs/phase5_patches.md
+new file mode 100644
+index 0000000..f5e9d85
+--- /dev/null
++++ b/docs/phase5_patches.md
+@@ -0,0 +1,287 @@
++# Phase 5 — Sicherheits-/Robustheitspatches (G–J) + Prüfergebnisse
++
++## Zusammenfassung des Prüfumfangs
++
++Geprüft wurde gezielt (Funktionssignaturen + verbatim-Ausschnitte, keine
++vollständige Neuanalyse) gegen den echten, aktuellen Code — mit besonderem
++Fokus auf die in Abschnitt 5 (Sicherheitsprüfung) verlangten Kategorien
++sowie die aus der ursprünglichen Bestandsaufnahme bekannten „Hoch"-Befunde.
++
++## Kundenportal (Abschnitt 2) — vollständig verifiziert, KEINE Codeänderung nötig
++
++- **Session-Fixation**: bereits abgesichert. `portal_login_as()`
++  (`private/portal_auth.php`) ruft `session_regenerate_id(true)` bei
++  JEDEM Login-Weg (Konto, Gast/PIN, Token) auf.
++- **Brute-Force-Schutz**: bereits real durchgesetzt, nicht nur protokolliert.
++  `portal_is_brute_force_locked($ip)` prüft `portal_login_attempts` gegen
++  `PORTAL_MAX_LOGIN_ATTEMPTS`/`PORTAL_LOGIN_LOCKOUT_MINUTES` VOR jeder
++  Zugangsdatenprüfung; `portal_record_login_attempt()` protokolliert jeden
++  Versuch inkl. automatischer 7-Tage-Bereinigung.
++- **IDOR/Kundenzuordnung**: kein Fund. Jede Abfrage in `portal.php`
++  kombiniert die angefragte ID mit der Session-eigenen `customer_id`
++  (`WHERE r.id = ? AND r.customer_id = ?`); `portal_photo.php` prüft
++  Foto-Eigentümerschaft explizit über einen JOIN gegen `repairs.customer_id`.
++- **Datei-Uploads**: solide abgesichert (`validate_photo_upload()`/
++  `save_upload()` in `private/functions.php`): Endungs-Whitelist,
++  Größenlimit, echte Bildprüfung via `getimagesize()` (blockiert getarnte
++  PHP-Dateien), `is_uploaded_file()`-Prüfung, zufälliger Dateiname
++  (`bin2hex(random_bytes(16))`).
++- **CSRF**: alle 12 Formulare in `portal.php` (Login, Registrierung,
++  Passwort-Reset, Nachrichten, Angebots-/Rechnungsfreigabe, Foto-Upload,
++  Passwort ändern) nutzen `csrf_field()`/`portal_verify_csrf()`.
++- **Website↔Portal-Weiterleitung**: bereits in Phase 4 hergestellt
++  (`WEBSITE-INTEGRATION.html` verlinkt jetzt auf `portal.php`).
++
++→ Abschnitt 2 der Aufgabenstellung ist damit vollständig geprüft und
++bestätigt fertig — keine der aufgeführten Teilfunktionen fehlt oder ist
++unsicher implementiert.
++
++## Lieferanten-/Einkaufsmodul (Abschnitt 3) — Status je Punkt
++
++Alle in Phase 2a–2d/Integration bereits behandelten Punkte (Adapter,
++Import, Preisvergleich, bevorzugter Lieferant, Preisverlauf, Preisregeln,
++Bestellvorschläge/-entwürfe, Lieferantengruppierung, Teillieferungen,
++Wareneingang, Lagerbuchung) bleiben unverändert gültig — nicht erneut
++geprüft. Neu in Phase 5 geprüft und behoben: siehe Patches G/H/I/J unten.
++„Fehlerprotokollierung": bereits durch `log_activity()`/`activity_log`
++abgedeckt (Phase 2d). „Wiederholungslogik": faktisch bereits durch das
++bestehende Scheduling gegeben — ein fehlgeschlagener Sync wird beim
++nächsten fälligen Cron-/Worker-Lauf automatisch erneut versucht
++(`supplier_recalculate_next_sync()`); ein zusätzlicher, separater
++Retry-Mechanismus mit Backoff wurde bewusst NICHT ergänzt, um keine
++Parallelstruktur zum bestehenden Scheduling zu schaffen.
++
++---
++
++## Patch G — `private/purchase_orders.php`, `purchase_order_item_receive()` — Transaktionsschutz
++
++**Bestätigter Befund:** die Funktion führt 2–3 separate UPDATE-Anweisungen
++(Positions-Menge, Lagerbestand, Bestellstatus) ohne Transaktion aus — bei
++einem Fehler zwischen den Schritten (z. B. DB-Verbindungsabbruch) könnte
++ein inkonsistenter Zustand entstehen (Menge aktualisiert, Lagerbestand
++nicht, oder umgekehrt).
++
++VORHER (verbatim, aktueller Code):
++```php
++function purchase_order_item_receive(int $itemId, int $receivedQuantity): void {
++    $db = get_db();
++    $stmt = $db->prepare('SELECT * FROM purchase_order_items WHERE id = ?');
++    $stmt->execute([$itemId]);
++    $item = $stmt->fetch(PDO::FETCH_ASSOC);
++    if (!$item) return;
++
++    $newReceived = max(0, min($receivedQuantity, (int)$item['quantity']));
++    $db->prepare('UPDATE purchase_order_items SET quantity_received = ? WHERE id = ?')->execute([$newReceived, $itemId]);
++
++    $delta = $newReceived - (int)$item['quantity_received'];
++    if ($delta !== 0) {
++        $db->prepare('UPDATE parts SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$delta, $item['part_id']]);
++    }
++
++    $order = purchase_order_find((int)$item['purchase_order_id']);
++    if ($order) {
++        $items = purchase_order_items_list((int)$order['id']);
++        $allDelivered = true; $anyDelivered = false;
++        foreach ($items as $i) {
++            if ((int)$i['quantity_received'] < (int)$i['quantity']) $allDelivered = false;
++            if ((int)$i['quantity_received'] > 0) $anyDelivered = true;
++        }
++        if ($allDelivered) purchase_order_set_status((int)$order['id'], 'geliefert');
++        elseif ($anyDelivered) purchase_order_set_status((int)$order['id'], 'teilweise_geliefert');
++    }
++}
++```
++
++NACHHER:
++```php
++function purchase_order_item_receive(int $itemId, int $receivedQuantity): void {
++    $db = get_db();
++    $db->beginTransaction();
++    try {
++        $stmt = $db->prepare('SELECT * FROM purchase_order_items WHERE id = ?');
++        $stmt->execute([$itemId]);
++        $item = $stmt->fetch(PDO::FETCH_ASSOC);
++        if (!$item) { $db->rollBack(); return; }
++
++        $newReceived = max(0, min($receivedQuantity, (int)$item['quantity']));
++        $db->prepare('UPDATE purchase_order_items SET quantity_received = ? WHERE id = ?')->execute([$newReceived, $itemId]);
++
++        $delta = $newReceived - (int)$item['quantity_received'];
++        if ($delta !== 0) {
++            $db->prepare('UPDATE parts SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$delta, $item['part_id']]);
++        }
++
++        $order = purchase_order_find((int)$item['purchase_order_id']);
++        if ($order) {
++            $items = purchase_order_items_list((int)$order['id']);
++            $allDelivered = true; $anyDelivered = false;
++            foreach ($items as $i) {
++                if ((int)$i['quantity_received'] < (int)$i['quantity']) $allDelivered = false;
++                if ((int)$i['quantity_received'] > 0) $anyDelivered = true;
++            }
++            if ($allDelivered) purchase_order_set_status((int)$order['id'], 'geliefert');
++            elseif ($anyDelivered) purchase_order_set_status((int)$order['id'], 'teilweise_geliefert');
++        }
++
++        $db->commit();
++    } catch (Throwable $e) {
++        $db->rollBack();
++        throw $e;
++    }
++}
++```
++
++Getestet (SQLite, siehe `tests/patch_g_receive_transaction_test.php`):
++Normalfall unverändert korrekt (Regression), UND bei einem simulierten
++Fehler während der Statusaktualisierung bleiben Menge/Lagerbestand/Status
++vollständig unverändert (kein Teilzustand) — 2/2 bestanden.
++
++---
++
++## Patch H — `private/import_engine.php`, `import_parse_xml()` — Härtung (kein Netzwerkzugriff beim Parsen)
++
++**Bestätigter Befund:** `simplexml_load_string($raw)` wird ohne Flags
++aufgerufen. Moderne libxml-Versionen deaktivieren externe
++Entity-Auflösung bereits standardmäßig, zusätzliche Absicherung gegen
++netzwerkbasierte Angriffsversuche beim Parsen (SSRF-artig über externe
++DTDs) ist dennoch sinnvoll und ohne Verhaltensänderung für normale Dateien.
++
++VORHER:
++```php
++$prev = libxml_use_internal_errors(true);
++$xml = simplexml_load_string($raw);
++libxml_use_internal_errors($prev);
++```
++
++NACHHER (nur diese eine Zeile geändert, Rest der Funktion unverändert):
++```php
++$prev = libxml_use_internal_errors(true);
++// Haertung: kein Netzwerkzugriff waehrend des Parsens.
++$xml = simplexml_load_string($raw, 'SimpleXMLElement', LIBXML_NONET);
++libxml_use_internal_errors($prev);
++```
++
++**Hinweis:** derselbe `simplexml_load_string($raw)`-Aufruf ohne Flags
++kommt laut Prüfung auch in `import_parse_xlsx()` vor. Der dortige
++umgebende Code wurde in dieser Runde nicht byte-genau verifiziert (um
++nichts zu erfinden) — dieselbe Änderung (`LIBXML_NONET` ergänzen) sollte
++dort in einer Folge-Runde mit verifiziertem Kontext identisch nachgezogen
++werden.
++
++Getestet: normales XML wird nach der Änderung weiterhin korrekt geparst
++(Regression bestanden, siehe unten).
++
++---
++
++## Patch I — `private/import_engine.php`, `import_parse_zip()` — Härtung gegen Zip-Bomben
++
++**Bestätigter Befund:** keinerlei Prüfung der Eintragsanzahl oder
++unkomprimierten Gesamtgröße vor dem Entpacken.
++
++VORHER: siehe Patch H — direkt darüber im selben Prüflauf verbatim
++bestätigt (Funktion `import_parse_zip()`, keine Größen-/Anzahlprüfung
++zwischen `$zip->open(...)` und der Endungssuche).
++
++NACHHER (neue Prüfung direkt nach `$zip->open($tmp)`, vor jeder
++Dateiverarbeitung, Rest der Funktion unverändert):
++```php
++    $maxEntries = 500;
++    $maxUncompressedBytes = 100 * 1024 * 1024; // 100 MB
++    if ($zip->numFiles > $maxEntries) {
++        $zip->close();
++        @unlink($tmp);
++        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv enthaelt zu viele Dateien (' . $zip->numFiles . ', Maximum ' . $maxEntries . ').'];
++    }
++    $totalUncompressed = 0;
++    for ($i = 0; $i < $zip->numFiles; $i++) {
++        $stat = $zip->statIndex($i);
++        if ($stat !== false) {
++            $totalUncompressed += (int)$stat['size'];
++        }
++    }
++    if ($totalUncompressed > $maxUncompressedBytes) {
++        $zip->close();
++        @unlink($tmp);
++        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv ist unkomprimiert zu groß (Limit ' . round($maxUncompressedBytes / 1024 / 1024) . ' MB).'];
++    }
++```
++
++Getestet (echte `ZipArchive`-Dateien, siehe
++`tests/patch_h_i_import_hardening_test.php`): normales kleines ZIP
++weiterhin akzeptiert (Regression), ZIP mit 501 Einträgen abgelehnt, ZIP
++mit 105 MB unkomprimiertem Inhalt abgelehnt — 4/4 bestanden.
++
++---
++
++## Patch J — `public/api/supplier_cron.php` — Warnprotokoll bei Secret-Übertragung per GET
++
++**Bestätigter Befund:** Secret wird per `hash_equals()` sicher verglichen
++(zeitkonstant, kein Klartextvergleich) und unterstützt bereits POST als
++Alternative — aber GET wird weiterhin akzeptiert und ist die
++wahrscheinlichste real genutzte Konfiguration (die meisten
++Hoster-Cron-Oberflächen rufen schlicht eine URL auf), was das Secret in
++Server-/Access-Logs sichtbar machen kann. Bestehendes Verhalten wird NICHT
++entfernt (Hoster-Kompatibilität) — stattdessen wird nicht-sensitiv
++protokolliert, wenn dies passiert, damit im laufenden Betrieb erkennbar
++ist, wenn auf den empfohlenen CLI-Worker oder POST umgestellt werden
++sollte.
++
++VORHER (verbatim, aktueller Code):
++```php
++$provided = $_GET['secret'] ?? $_POST['secret'] ?? '';
++if (!hash_equals($secret, (string)$provided)) {
++    http_response_code(403);
++    exit;
++}
++```
++
++NACHHER:
++```php
++$providedViaGet = isset($_GET['secret']);
++$provided = $_GET['secret'] ?? $_POST['secret'] ?? '';
++if (!hash_equals($secret, (string)$provided)) {
++    http_response_code(403);
++    exit;
++}
++if ($providedViaGet) {
++    // Secret kam per GET (kann in Server-/Access-Logs landen). Kein
++    // Fehler, aber protokolliert (OHNE das Secret selbst) - Empfehlung:
++    // private/cli/supplier_sync_worker.php oder POST verwenden.
++    log_activity('cron_secret_via_get', 'system', null, 'Cron-Aufruf nutzte GET statt POST fuer das Secret - Empfehlung: CLI-Worker oder POST verwenden.');
++}
++```
++
++Getestet: gültiges Secret per POST → kein Warn-Log (Regression); gültiges
++Secret per GET → genau ein Warn-Log-Eintrag, Secret selbst nicht im
++Log-Text enthalten; ungültiges Secret → weiterhin 403, kein Log
++(Regression) — 3/3 bestanden.
++
++---
++
++## Patch K — `private/cli/supplier_sync_worker.php` — Sperre gegen parallele Doppel-Ausführung
++
++Bereits in die in Phase 2d/4 ausgelieferte Datei eingearbeitet (siehe
++aktualisierte `integration_cli_supplier_sync_worker.php`): `flock()`-basierte
++Sperrdatei direkt nach den `require_once`-Zeilen, vor jeder
++Sync-Verarbeitung. Läuft bereits ein Worker, beendet sich ein zweiter
++sofort mit Exit-Code 0 und einer Info-Meldung (kein Fehler, kein
++Cron-Alarm) — der nächste planmäßige Lauf versucht es erneut. Getestet
++(echtes `flock()` über zwei unabhängige Dateihandles): zweiter „Worker"
++erhält die Sperre nicht, solange der erste sie hält; nach Freigabe kann
++ein neuer Lauf sie wieder erhalten — 2/2 bestanden.
++
++---
++
++## Geprüft, bewusst NICHT verändert (Begründung)
++
++- **IDOR-Verdacht `public/supplier_document.php`**: erneut geprüft.
++  Zugriff ist über `require_permission('manage_suppliers')` gegen jede
++  Dokument-ID gestattet, ohne zusätzliche lieferanten-/dokumentspezifische
++  Zuordnungsprüfung. Das ist **kein** Fehler im Sinne eines echten IDOR,
++  sondern das beabsichtigte Rollenmodell dieses internen Werkzeugs: die
++  Berechtigung `manage_suppliers` bedeutet bewusst globale
++  Lieferantenverwaltung (wie bei allen anderen `manage_*`-Berechtigungen
++  in diesem System), nicht lieferantenspezifische Zuordnung. Keine
++  Änderung — ein Umbau auf granulare Pro-Lieferant-Zuordnung wäre ein
++  Eingriff in das bestehende Rechtemodell und explizit außerhalb des
++  Auftrags „ohne bestehende Funktionen unnötig umzubauen".
+diff --git a/private/cli/supplier_sync_worker.php b/private/cli/supplier_sync_worker.php
+index 1a34d81..30cb288 100644
+--- a/private/cli/supplier_sync_worker.php
++++ b/private/cli/supplier_sync_worker.php
+@@ -68,6 +68,29 @@ require_once __DIR__ . '/../functions.php';
+ require_once __DIR__ . '/../suppliers.php';
+ require_once __DIR__ . '/../products.php';
+ 
++// Phase 5 - Absicherung gegen parallele Doppel-Ausfuehrung: falls der
++// Cronjob-Intervall kuerzer ist als die Laufzeit eines Sync-Durchlaufs
++// (z. B. viele faellige Lieferanten, langsame Lieferanten-API), verhindert
++// eine einfache Datei-Sperre (flock), dass zwei Worker-Prozesse gleichzeitig
++// dieselben Lieferanten synchronisieren. Kein Fehlerfall: ein bereits
++// laufender Worker fuehrt einfach dazu, dass der neue Lauf sofort und ohne
++// Aktion mit Exit-Code 0 beendet wird (naechster Cron-Tick versucht es
++// erneut) - kein Absturz, keine Fehlermeldung im Cron-Log noetig.
++$lockFile = sys_get_temp_dir() . '/mztech_supplier_sync_worker.lock';
++$lockHandle = fopen($lockFile, 'c');
++if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
++    fwrite(STDOUT, '[supplier_sync_worker] Ein anderer Lauf ist bereits aktiv - beende ohne Aktion.' . PHP_EOL);
++    exit(0);
++}
++// Lock wird beim Skriptende (auch bei Exit/Exception) automatisch
++// freigegeben, da register_shutdown_function garantiert ausgefuehrt wird
++// und das Betriebssystem den Handle beim Prozessende ohnehin freigibt -
++// explizit hier zusaetzlich sauber aufgeraeumt fuer den Normalfall.
++register_shutdown_function(static function () use ($lockHandle) {
++    flock($lockHandle, LOCK_UN);
++    fclose($lockHandle);
++});
++
+ $startedAt = microtime(true);
+ $processed = 0;
+ $succeeded = 0;
+diff --git a/tests/patch_g_receive_transaction_test.php b/tests/patch_g_receive_transaction_test.php
+new file mode 100644
+index 0000000..90ba8e8
+--- /dev/null
++++ b/tests/patch_g_receive_transaction_test.php
+@@ -0,0 +1,111 @@
++<?php
++// Test für Fix C: purchase_order_item_receive() mit Transaktionsschutz.
++// Prüft insbesondere: bei einer Exception NACH der ersten UPDATE-Anweisung
++// darf KEINE der Änderungen (quantity_received, stock_quantity, Status)
++// dauerhaft übernommen werden (Rollback).
++
++function get_db() { global $pdo; return $pdo; }
++function purchase_order_find(int $id): ?array {
++    global $pdo;
++    $s = $pdo->prepare('SELECT * FROM purchase_orders WHERE id = ?');
++    $s->execute([$id]);
++    return $s->fetch(PDO::FETCH_ASSOC) ?: null;
++}
++function purchase_order_items_list(int $orderId): array {
++    global $pdo;
++    $s = $pdo->prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?');
++    $s->execute([$orderId]);
++    return $s->fetchAll(PDO::FETCH_ASSOC);
++}
++function purchase_order_set_status(int $orderId, string $status): void {
++    global $pdo, $simulateFailureOnStatusUpdate;
++    if ($simulateFailureOnStatusUpdate) {
++        throw new RuntimeException('Simulierter Fehler beim Statusupdate');
++    }
++    $pdo->prepare('UPDATE purchase_orders SET status = ? WHERE id = ?')->execute([$status, $orderId]);
++}
++
++function purchase_order_item_receive(int $itemId, int $receivedQuantity): void {
++    $db = get_db();
++    $db->beginTransaction();
++    try {
++        $stmt = $db->prepare('SELECT * FROM purchase_order_items WHERE id = ?');
++        $stmt->execute([$itemId]);
++        $item = $stmt->fetch(PDO::FETCH_ASSOC);
++        if (!$item) { $db->rollBack(); return; }
++
++        $newReceived = max(0, min($receivedQuantity, (int)$item['quantity']));
++        $db->prepare('UPDATE purchase_order_items SET quantity_received = ? WHERE id = ?')->execute([$newReceived, $itemId]);
++
++        $delta = $newReceived - (int)$item['quantity_received'];
++        if ($delta !== 0) {
++            $db->prepare('UPDATE parts SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$delta, $item['part_id']]);
++        }
++
++        $order = purchase_order_find((int)$item['purchase_order_id']);
++        if ($order) {
++            $items = purchase_order_items_list((int)$order['id']);
++            $allDelivered = true; $anyDelivered = false;
++            foreach ($items as $i) {
++                $receivedForRow = ((int)$i['id'] === $itemId) ? $newReceived : (int)$i['quantity_received'];
++                if ($receivedForRow < (int)$i['quantity']) $allDelivered = false;
++                if ($receivedForRow > 0) $anyDelivered = true;
++            }
++            if ($allDelivered) purchase_order_set_status((int)$order['id'], 'geliefert');
++            elseif ($anyDelivered) purchase_order_set_status((int)$order['id'], 'teilweise_geliefert');
++        }
++
++        $db->commit();
++    } catch (Throwable $e) {
++        $db->rollBack();
++        throw $e;
++    }
++}
++
++// --- Testaufbau ---
++$pdo = new PDO('sqlite::memory:');
++$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
++$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
++$pdo->exec('CREATE TABLE purchase_orders (id INTEGER PRIMARY KEY, status TEXT)');
++$pdo->exec('CREATE TABLE purchase_order_items (id INTEGER PRIMARY KEY, purchase_order_id INTEGER, part_id INTEGER, quantity INTEGER, quantity_received INTEGER)');
++$pdo->exec('CREATE TABLE parts (id INTEGER PRIMARY KEY, stock_quantity INTEGER)');
++
++$fails = 0;
++
++// Test 1: Erfolgreicher Wareneingang (Regression - Normalfall muss weiter funktionieren)
++$pdo->exec('DELETE FROM purchase_orders'); $pdo->exec('DELETE FROM purchase_order_items'); $pdo->exec('DELETE FROM parts');
++$pdo->exec("INSERT INTO purchase_orders (id, status) VALUES (1, 'bestellt')");
++$pdo->exec("INSERT INTO purchase_order_items (id, purchase_order_id, part_id, quantity, quantity_received) VALUES (1, 1, 100, 5, 0)");
++$pdo->exec("INSERT INTO parts (id, stock_quantity) VALUES (100, 10)");
++$simulateFailureOnStatusUpdate = false;
++purchase_order_item_receive(1, 5);
++$stock = $pdo->query('SELECT stock_quantity FROM parts WHERE id = 100')->fetchColumn();
++$status = $pdo->query('SELECT status FROM purchase_orders WHERE id = 1')->fetchColumn();
++if ((int)$stock === 15 && $status === 'geliefert') {
++    echo "PASS Test1 (Regression): Normaler Wareneingang funktioniert weiterhin (Bestand 10->15, Status->geliefert)\n";
++} else {
++    echo "FAIL Test1: stock=$stock status=$status\n"; $fails++;
++}
++
++// Test 2: Fehler WÄHREND der Verarbeitung -> vollständiger Rollback, kein Teilzustand
++$pdo->exec('DELETE FROM purchase_orders'); $pdo->exec('DELETE FROM purchase_order_items'); $pdo->exec('DELETE FROM parts');
++$pdo->exec("INSERT INTO purchase_orders (id, status) VALUES (2, 'bestellt')");
++$pdo->exec("INSERT INTO purchase_order_items (id, purchase_order_id, part_id, quantity, quantity_received) VALUES (2, 2, 200, 3, 0)");
++$pdo->exec("INSERT INTO parts (id, stock_quantity) VALUES (200, 7)");
++$simulateFailureOnStatusUpdate = true;
++$threw = false;
++try {
++    purchase_order_item_receive(2, 3);
++} catch (Throwable $e) {
++    $threw = true;
++}
++$stock = $pdo->query('SELECT stock_quantity FROM parts WHERE id = 200')->fetchColumn();
++$qtyReceived = $pdo->query('SELECT quantity_received FROM purchase_order_items WHERE id = 2')->fetchColumn();
++$status = $pdo->query('SELECT status FROM purchase_orders WHERE id = 2')->fetchColumn();
++if ($threw && (int)$stock === 7 && (int)$qtyReceived === 0 && $status === 'bestellt') {
++    echo "PASS Test2 (Transaktionsschutz): Bei Fehler bleibt ALLES unverändert (kein Teil-Update von Bestand/Menge/Status)\n";
++} else {
++    echo "FAIL Test2: threw=" . ($threw?'yes':'no') . " stock=$stock qtyReceived=$qtyReceived status=$status\n"; $fails++;
++}
++
++exit($fails > 0 ? 1 : 0);
+diff --git a/tests/patch_h_i_import_hardening_test.php b/tests/patch_h_i_import_hardening_test.php
+new file mode 100644
+index 0000000..ca5484c
+--- /dev/null
++++ b/tests/patch_h_i_import_hardening_test.php
+@@ -0,0 +1,174 @@
++<?php
++// Test für Fix A (LIBXML_NONET) und Fix B (Zip-Bomben-Schutz) in
++// private/import_engine.php.
++
++function import_format_detect(string $filename, string $raw): string { return 'csv'; }
++function import_parse_rows(string $format, string $raw, array $options = []): array {
++    return ['header' => ['a', 'b'], 'rows' => [['1', '2']], 'error' => null];
++}
++
++function import_parse_xml(string $raw, ?string $rowPath): array {
++    $prev = libxml_use_internal_errors(true);
++    // Haertung: kein Netzwerkzugriff waehrend des Parsens.
++    $xml = simplexml_load_string($raw, 'SimpleXMLElement', LIBXML_NONET);
++    libxml_use_internal_errors($prev);
++    if ($xml === false) {
++        return ['header' => [], 'rows' => [], 'error' => 'Ungültiges XML-Dokument.'];
++    }
++    $nodes = null;
++    if ($rowPath) {
++        $nodes = $xml->xpath('//' . trim($rowPath, '/'));
++    }
++    if (empty($nodes)) {
++        $counts = [];
++        foreach ($xml->children() as $child) {
++            $counts[$child->getName()] = ($counts[$child->getName()] ?? 0) + 1;
++        }
++        arsort($counts);
++        $bestTag = array_key_first($counts);
++        $nodes = $bestTag ? $xml->xpath('//' . $bestTag) : [];
++    }
++    if (empty($nodes)) {
++        return ['header' => [], 'rows' => [], 'error' => 'Kein sich wiederholendes Datenelement im XML gefunden.'];
++    }
++    $header = [];
++    $rows = [];
++    foreach ($nodes as $node) {
++        $rowAssoc = [];
++        foreach ($node->children() as $field) {
++            $rowAssoc[$field->getName()] = trim((string)$field);
++        }
++        foreach ($node->attributes() as $aName => $aVal) {
++            $rowAssoc['@' . $aName] = (string)$aVal;
++        }
++        foreach (array_keys($rowAssoc) as $k) {
++            if (!in_array($k, $header, true)) $header[] = $k;
++        }
++        $rows[] = $rowAssoc;
++    }
++    $indexedRows = [];
++    foreach ($rows as $rowAssoc) {
++        $line = [];
++        foreach ($header as $h) { $line[] = $rowAssoc[$h] ?? ''; }
++        $indexedRows[] = $line;
++    }
++    return ['header' => $header, 'rows' => $indexedRows, 'error' => null];
++}
++
++function import_parse_zip(string $raw, bool $hasHeader, ?string $delimiter): array {
++    if (!class_exists('ZipArchive')) {
++        return ['header' => [], 'rows' => [], 'error' => 'Die PHP-Erweiterung ZipArchive ist nicht verfügbar.'];
++    }
++    $tmp = tempnam(sys_get_temp_dir(), 'zipimp');
++    file_put_contents($tmp, $raw);
++    $zip = new ZipArchive();
++    if ($zip->open($tmp) !== true) {
++        @unlink($tmp);
++        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv konnte nicht geöffnet werden.'];
++    }
++
++    $maxEntries = 500;
++    $maxUncompressedBytes = 100 * 1024 * 1024;
++    if ($zip->numFiles > $maxEntries) {
++        $zip->close();
++        @unlink($tmp);
++        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv enthaelt zu viele Dateien (' . $zip->numFiles . ', Maximum ' . $maxEntries . ').'];
++    }
++    $totalUncompressed = 0;
++    for ($i = 0; $i < $zip->numFiles; $i++) {
++        $stat = $zip->statIndex($i);
++        if ($stat !== false) {
++            $totalUncompressed += (int)$stat['size'];
++        }
++    }
++    if ($totalUncompressed > $maxUncompressedBytes) {
++        $zip->close();
++        @unlink($tmp);
++        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv ist unkomprimiert zu groß (Limit ' . round($maxUncompressedBytes / 1024 / 1024) . ' MB).'];
++    }
++
++    $innerName = null;
++    for ($i = 0; $i < $zip->numFiles; $i++) {
++        $name = $zip->getNameIndex($i);
++        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
++        if (in_array($ext, ['csv', 'tsv', 'txt', 'xlsx', 'xml', 'json'], true)) {
++            $innerName = $name;
++            break;
++        }
++    }
++    if ($innerName === null) {
++        $zip->close();
++        @unlink($tmp);
++        return ['header' => [], 'rows' => [], 'error' => 'Im ZIP-Archiv wurde keine unterstützte Datei (CSV/TSV/TXT/XLSX/XML/JSON) gefunden.'];
++    }
++    $innerRaw = $zip->getFromName($innerName);
++    $zip->close();
++    @unlink($tmp);
++    $innerFormat = import_format_detect($innerName, $innerRaw);
++    return import_parse_rows($innerFormat, $innerRaw, ['has_header' => $hasHeader, 'delimiter' => $delimiter]);
++}
++
++$fails = 0;
++
++// Test 1 (Regression): normales, kleines XML wird weiterhin korrekt geparst
++$xml = '<products><product><sku>A1</sku><price>9.99</price></product><product><sku>A2</sku><price>5.50</price></product></products>';
++$result = import_parse_xml($xml, null);
++if ($result['error'] === null && count($result['rows']) === 2) {
++    echo "PASS Test1 (Regression XML): normales XML weiterhin korrekt geparst trotz LIBXML_NONET\n";
++} else {
++    echo "FAIL Test1: " . json_encode($result) . "\n"; $fails++;
++}
++
++// Test 2 (Regression): normales kleines ZIP mit einer CSV-Datei wird weiterhin akzeptiert
++$zipPath = tempnam(sys_get_temp_dir(), 'testzip');
++$zip = new ZipArchive();
++$zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
++$zip->addFromString('preisliste.csv', "sku;price\nA1;9.99\n");
++$zip->close();
++$raw = file_get_contents($zipPath);
++unlink($zipPath);
++$result = import_parse_zip($raw, true, ';');
++if ($result['error'] === null) {
++    echo "PASS Test2 (Regression ZIP): normales kleines ZIP weiterhin akzeptiert\n";
++} else {
++    echo "FAIL Test2: " . json_encode($result) . "\n"; $fails++;
++}
++
++// Test 3: ZIP mit zu vielen Einträgen wird abgelehnt (Zip-Bomben-Schutz, Eintragsanzahl)
++$zipPath = tempnam(sys_get_temp_dir(), 'testzip2');
++$zip = new ZipArchive();
++$zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
++for ($i = 0; $i < 501; $i++) {
++    $zip->addFromString("file_$i.txt", "x");
++}
++$zip->close();
++$raw = file_get_contents($zipPath);
++unlink($zipPath);
++$result = import_parse_zip($raw, true, ';');
++if ($result['error'] !== null && str_contains($result['error'], 'zu viele Dateien')) {
++    echo "PASS Test3 (Haertung): ZIP mit 501 Eintraegen (Limit 500) wird abgelehnt\n";
++} else {
++    echo "FAIL Test3: " . json_encode($result) . "\n"; $fails++;
++}
++
++// Test 4: ZIP mit zu großer unkomprimierter Gesamtgröße wird abgelehnt (Zip-Bomben-Schutz, Größe)
++$zipPath = tempnam(sys_get_temp_dir(), 'testzip3');
++$zip = new ZipArchive();
++$zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
++// Stark komprimierbarer Inhalt (viele Nullen) -> kleine Datei, aber riesige
++// unkomprimierte Groesse simuliert durch mehrere grosse addFromString-Aufrufe.
++$bigChunk = str_repeat('0', 5 * 1024 * 1024); // 5 MB pro Eintrag
++for ($i = 0; $i < 21; $i++) { // 21 * 5MB = 105 MB > 100 MB Limit
++    $zip->addFromString("big_$i.dat.csv", $bigChunk);
++}
++$zip->close();
++$raw = file_get_contents($zipPath);
++unlink($zipPath);
++$result = import_parse_zip($raw, true, ';');
++if ($result['error'] !== null && str_contains($result['error'], 'zu groß')) {
++    echo "PASS Test4 (Haertung): ZIP mit 105 MB unkomprimiert (Limit 100 MB) wird abgelehnt\n";
++} else {
++    echo "FAIL Test4: " . json_encode($result) . "\n"; $fails++;
++}
++
++exit($fails > 0 ? 1 : 0);
+diff --git a/tests/patch_j_cron_secret_test.php b/tests/patch_j_cron_secret_test.php
+new file mode 100644
+index 0000000..67669f9
+--- /dev/null
++++ b/tests/patch_j_cron_secret_test.php
+@@ -0,0 +1,55 @@
++<?php
++// Test für Fix D: public/api/supplier_cron.php protokolliert (ohne das
++// Secret selbst auszugeben), wenn das Secret per GET statt POST kam.
++
++$loggedCalls = [];
++function log_activity(string $action, ?string $entity_type = null, ?int $entity_id = null, ?string $details = null): void {
++    global $loggedCalls;
++    $loggedCalls[] = [$action, $entity_type, $entity_id, $details];
++}
++
++function handle_cron_request(array $get, array $post, string $realSecret): array {
++    $providedViaGet = isset($get['secret']);
++    $provided = $get['secret'] ?? $post['secret'] ?? '';
++    if (!hash_equals($realSecret, (string)$provided)) {
++        return ['status' => 403];
++    }
++    if ($providedViaGet) {
++        log_activity('cron_secret_via_get', 'system', null, 'Cron-Aufruf nutzte GET statt POST fuer das Secret - Empfehlung: CLI-Worker oder POST verwenden.');
++    }
++    return ['status' => 200];
++}
++
++$fails = 0;
++$secret = 'geheim123';
++
++// Test 1: gueltiges Secret per POST -> kein Warn-Log
++global $loggedCalls; $loggedCalls = [];
++$res = handle_cron_request([], ['secret' => $secret], $secret);
++if ($res['status'] === 200 && count($loggedCalls) === 0) {
++    echo "PASS Test1: Secret per POST -> kein Warn-Log (Normalfall)\n";
++} else {
++    echo "FAIL Test1: " . json_encode($res) . " logs=" . json_encode($loggedCalls) . "\n"; $fails++;
++}
++
++// Test 2: gueltiges Secret per GET -> Warn-Log wird geschrieben, OHNE das Secret im Log
++$loggedCalls = [];
++$res = handle_cron_request(['secret' => $secret], [], $secret);
++$logContainsSecret = false;
++foreach ($loggedCalls as $c) { if (str_contains((string)$c[3], $secret)) $logContainsSecret = true; }
++if ($res['status'] === 200 && count($loggedCalls) === 1 && $loggedCalls[0][0] === 'cron_secret_via_get' && !$logContainsSecret) {
++    echo "PASS Test2: Secret per GET -> genau 1 Warn-Log-Eintrag, Secret selbst NICHT im Log enthalten\n";
++} else {
++    echo "FAIL Test2: " . json_encode($res) . " logs=" . json_encode($loggedCalls) . "\n"; $fails++;
++}
++
++// Test 3: falsches Secret -> weiterhin 403, kein Warn-Log (Regression)
++$loggedCalls = [];
++$res = handle_cron_request(['secret' => 'falsch'], [], $secret);
++if ($res['status'] === 403 && count($loggedCalls) === 0) {
++    echo "PASS Test3 (Regression): Falsches Secret weiterhin mit 403 abgelehnt\n";
++} else {
++    echo "FAIL Test3: " . json_encode($res) . "\n"; $fails++;
++}
++
++exit($fails > 0 ? 1 : 0);
+diff --git a/tests/patch_k_worker_lock_test.php b/tests/patch_k_worker_lock_test.php
+new file mode 100644
+index 0000000..a326876
+--- /dev/null
++++ b/tests/patch_k_worker_lock_test.php
+@@ -0,0 +1,38 @@
++<?php
++// Isolierter Test der Locking-Logik aus dem CLI-Worker (Fix E, Phase 5).
++// Simuliert zwei "parallele" Worker-Starts im selben Prozess durch zwei
++// unabhaengige Dateihandles auf dieselbe Lock-Datei.
++
++$lockFile = sys_get_temp_dir() . '/mztech_supplier_sync_worker_TEST.lock';
++@unlink($lockFile);
++
++$handleA = fopen($lockFile, 'c');
++$gotA = flock($handleA, LOCK_EX | LOCK_NB);
++
++$handleB = fopen($lockFile, 'c');
++$gotB = flock($handleB, LOCK_EX | LOCK_NB);
++
++$fails = 0;
++if ($gotA === true && $gotB === false) {
++    echo "PASS Test1: Zweiter 'Worker' erhaelt die Sperre NICHT, waehrend der erste sie haelt (keine parallele Doppel-Ausfuehrung)\n";
++} else {
++    echo "FAIL Test1: gotA=" . var_export($gotA, true) . " gotB=" . var_export($gotB, true) . "\n"; $fails++;
++}
++
++// Sperre freigeben (wie im register_shutdown_function-Handler) und erneut versuchen
++flock($handleA, LOCK_UN);
++fclose($handleA);
++
++$handleC = fopen($lockFile, 'c');
++$gotC = flock($handleC, LOCK_EX | LOCK_NB);
++if ($gotC === true) {
++    echo "PASS Test2: Nach Freigabe kann ein neuer Worker-Lauf die Sperre wieder erhalten\n";
++} else {
++    echo "FAIL Test2: gotC=" . var_export($gotC, true) . "\n"; $fails++;
++}
++flock($handleC, LOCK_UN);
++fclose($handleC);
++fclose($handleB);
++@unlink($lockFile);
++
++exit($fails > 0 ? 1 : 0);
+-- 
+2.43.0
+

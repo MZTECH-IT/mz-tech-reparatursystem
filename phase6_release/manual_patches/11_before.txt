@@ -1,0 +1,3 @@
+    $prev = libxml_use_internal_errors(true);
+    $xml = simplexml_load_string($raw);
+    libxml_use_internal_errors($prev);

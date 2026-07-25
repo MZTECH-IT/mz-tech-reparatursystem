@@ -1,0 +1,5 @@
+    if ($zip->open($tmp) !== true) {
+        @unlink($tmp);
+        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv konnte nicht geöffnet werden.'];
+    }
+    $innerName = null;

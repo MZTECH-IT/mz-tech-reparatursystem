@@ -1,0 +1,3 @@
+<div class="card">
+    <div class="card-header"><h2 class="card-title"><?= svg_icon('database', 20) ?> Bestellungen <span class="badge-secondary"><?= count($orders) ?></span></h2></div>
+    <div class="card-body">

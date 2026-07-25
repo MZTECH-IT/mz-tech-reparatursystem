@@ -1,0 +1,53 @@
+class SoapApiAdapter implements SupplierAdapterInterface {
+    public function testConnection(array $profile, array $credentials): array {
+        if (!extension_loaded('soap')) {
+            return ['success' => false, 'message' => 'Die PHP-Erweiterung "soap" ist auf diesem Server nicht aktiviert. Bitte beim Hoster aktivieren lassen, dann ist dieser Adapter sofort einsatzbereit.'];
+        }
+        if (empty($profile['endpoint_url'])) {
+            return ['success' => false, 'message' => 'Keine WSDL-/Endpunkt-URL hinterlegt.'];
+        }
+        try {
+            $client = new SoapClient($profile['endpoint_url'], ['connection_timeout' => 10, 'exceptions' => true]);
+            return ['success' => true, 'message' => 'WSDL erfolgreich geladen.'];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'SOAP-Verbindung fehlgeschlagen: ' . $e->getMessage()];
+        }
+    }
+    public function fetchPayload(array $profile, array $credentials): array {
+        if (!extension_loaded('soap')) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'PHP-Erweiterung "soap" nicht aktiv.'];
+        }
+        if (empty($profile['endpoint_url'])) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'Keine WSDL-/Endpunkt-URL hinterlegt.'];
+        }
+        // Lieferantenspezifische Methode/Parameter kommen aus den
+        // verschluesselten Zugangsdaten (Felder soap_method/soap_params,
+        // siehe supplier_interface_credentials_decrypt() -- bereits so
+        // in suppliers_form.php vorgesehen).
+        $method = trim((string)($credentials['soap_method'] ?? ''));
+        if ($method === '') {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'Kein SOAP-Methodenname in den Zugangsdaten hinterlegt (Feld "soap_method").'];
+        }
+        $paramsRaw = $credentials['soap_params'] ?? '[]';
+        $params = is_array($paramsRaw) ? $paramsRaw : json_decode((string)$paramsRaw, true);
+        if (!is_array($params)) {
+            $params = [];
+        }
+        try {
+            $client = new SoapClient($profile['endpoint_url'], ['connection_timeout' => 10, 'exceptions' => true]);
+            $result = $client->__soapCall($method, [$params]);
+            // SOAP-Antworten sind meist stdClass/Array-Strukturen, keine
+            // Rohdatei -- fuer die einheitliche Adapter-Schnittstelle
+            // (die ein 'raw'-Byte-Payload erwartet, das anschliessend an
+            // import_engine.php uebergeben wird) als JSON serialisiert,
+            // damit import_parse_json() es direkt verarbeiten kann.
+            $raw = json_encode($result, JSON_UNESCAPED_UNICODE);
+            if ($raw === false) {
+                return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SOAP-Antwort konnte nicht in JSON umgewandelt werden.'];
+            }
+            return ['success' => true, 'raw' => $raw, 'filename' => 'soap_response.json', 'message' => 'SOAP-Aufruf "' . $method . '" erfolgreich.'];
+        } catch (Throwable $e) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SOAP-Aufruf fehlgeschlagen: ' . $e->getMessage()];
+        }
+    }
+}

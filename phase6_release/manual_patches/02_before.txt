@@ -1,0 +1,25 @@
+class SoapApiAdapter implements SupplierAdapterInterface {
+    public function testConnection(array $profile, array $credentials): array {
+        if (!extension_loaded('soap')) {
+            return ['success' => false, 'message' => 'Die PHP-Erweiterung "soap" ist auf diesem Server nicht aktiviert. Bitte beim Hoster aktivieren lassen, dann ist dieser Adapter sofort einsatzbereit.'];
+        }
+        if (empty($profile['endpoint_url'])) {
+            return ['success' => false, 'message' => 'Keine WSDL-/Endpunkt-URL hinterlegt.'];
+        }
+        try {
+            $client = new SoapClient($profile['endpoint_url'], ['connection_timeout' => 10, 'exceptions' => true]);
+            return ['success' => true, 'message' => 'WSDL erfolgreich geladen.'];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'SOAP-Verbindung fehlgeschlagen: ' . $e->getMessage()];
+        }
+    }
+    public function fetchPayload(array $profile, array $credentials): array {
+        if (!extension_loaded('soap')) {
+            return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'PHP-Erweiterung "soap" nicht aktiv.'];
+        }
+        // Die konkrete SOAP-Methode/Parameter sind lieferantenspezifisch
+        // (siehe credentials['soap_method']/['soap_params']) und werden
+        // beim Anlegen eines konkreten Lieferanten ergänzt.
+        return ['success' => false, 'raw' => null, 'filename' => null, 'message' => 'SOAP-Methodenaufruf ist lieferantenspezifisch zu konfigurieren (siehe SCHNITTSTELLEN_ADAPTER_DOKUMENTATION.txt).'];
+    }
+}

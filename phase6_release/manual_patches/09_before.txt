@@ -1,0 +1,2 @@
+      <pre id="code-nav"><code>&lt;li&gt;&lt;a href="https://mztech-it.de/repair/public/termin.php"&gt;Termin vereinbaren&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://mztech-it.de/repair/public/anfrage.php" class="nav-cta"&gt;Reparatur anfragen&lt;/a&gt;&lt;/li&gt;</code></pre>

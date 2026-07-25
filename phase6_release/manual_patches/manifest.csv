@@ -1,0 +1,14 @@
+id,target_file,description
+01,private/supplier_adapters.php,Patch A - SftpAdapter vollstaendige Klasse
+02,private/supplier_adapters.php,Patch A2 - SoapApiAdapter::fetchPayload()
+03,private/purchase_orders.php,Patch B - Versandklasse/Land case-Bloecke
+04,private/products.php,Patch C - import_upsert_offer() Pricing-Anbindung
+05,private/purchase_orders.php,Patch D - procurement_suggestions_low_stock() neu
+06,public/purchase_orders.php,Patch E1 - POST-Handler nach require_permission
+07,public/purchase_orders.php,Patch E2 - UI-Karte Bestellvorschlaege
+08,WEBSITE-INTEGRATION.html,Patch F1 - hero-btns Kundenportal-Link
+09,WEBSITE-INTEGRATION.html,Patch F2 - Navigationsmenue Kundenportal-Link
+10,private/purchase_orders.php,Patch G - purchase_order_item_receive() Transaktionsschutz
+11,private/import_engine.php,Patch H - import_parse_xml() LIBXML_NONET
+12,private/import_engine.php,Patch I - import_parse_zip() Zip-Bomben-Schutz
+13,public/api/supplier_cron.php,Patch J - GET-Secret Warnprotokoll

@@ -1,0 +1,4 @@
+        $suggestions[] = $suggestion;
+    }
+    return $suggestions;
+}

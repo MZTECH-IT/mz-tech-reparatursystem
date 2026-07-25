@@ -1,0 +1,4 @@
+    $prev = libxml_use_internal_errors(true);
+    // Haertung: kein Netzwerkzugriff waehrend des Parsens.
+    $xml = simplexml_load_string($raw, 'SimpleXMLElement', LIBXML_NONET);
+    libxml_use_internal_errors($prev);

@@ -1,0 +1,3 @@
+    product_recalculate_price_flag($partId);
+    return $offerId;
+}

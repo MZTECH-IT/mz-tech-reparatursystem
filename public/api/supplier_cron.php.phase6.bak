@@ -41,25 +41,11 @@ if ($secret === '') {
     set_setting('supplier_cron_secret', $secret);
 }
 
-$providedViaGet = isset($_GET['secret']);
-$providedViaGet = isset($_GET['secret']);
 $provided = $_GET['secret'] ?? $_POST['secret'] ?? '';
 if (!hash_equals($secret, (string)$provided)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Ungültiges oder fehlendes Geheimnis.']);
     exit;
-}
-if ($providedViaGet) {
-    // Secret kam per GET (kann in Server-/Access-Logs landen). Kein
-    // Fehler, aber protokolliert (OHNE das Secret selbst) - Empfehlung:
-    // private/cli/supplier_sync_worker.php oder POST verwenden.
-    log_activity('cron_secret_via_get', 'system', null, 'Cron-Aufruf nutzte GET statt POST fuer das Secret - Empfehlung: CLI-Worker oder POST verwenden.');
-}
-if ($providedViaGet) {
-    // Secret kam per GET (kann in Server-/Access-Logs landen). Kein
-    // Fehler, aber protokolliert (OHNE das Secret selbst) - Empfehlung:
-    // private/cli/supplier_sync_worker.php oder POST verwenden.
-    log_activity('cron_secret_via_get', 'system', null, 'Cron-Aufruf nutzte GET statt POST fuer das Secret - Empfehlung: CLI-Worker oder POST verwenden.');
 }
 
 $results = [];

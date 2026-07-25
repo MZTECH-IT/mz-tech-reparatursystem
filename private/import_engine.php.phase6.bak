@@ -231,8 +231,7 @@ function import_xlsx_col_to_index(string $letters): int {
  */
 function import_parse_xml(string $raw, ?string $rowPath): array {
     $prev = libxml_use_internal_errors(true);
-    // Haertung: kein Netzwerkzugriff waehrend des Parsens.
-    $xml = simplexml_load_string($raw, 'SimpleXMLElement', LIBXML_NONET);
+    $xml = simplexml_load_string($raw);
     libxml_use_internal_errors($prev);
     if ($xml === false) {
         return ['header' => [], 'rows' => [], 'error' => 'Ungültiges XML-Dokument.'];
@@ -349,25 +348,6 @@ function import_parse_zip(string $raw, bool $hasHeader, ?string $delimiter): arr
     if ($zip->open($tmp) !== true) {
         @unlink($tmp);
         return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv konnte nicht geöffnet werden.'];
-    }
-    $maxEntries = 500;
-    $maxUncompressedBytes = 100 * 1024 * 1024; // 100 MB
-    if ($zip->numFiles > $maxEntries) {
-        $zip->close();
-        @unlink($tmp);
-        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv enthaelt zu viele Dateien (' . $zip->numFiles . ', Maximum ' . $maxEntries . ').'];
-    }
-    $totalUncompressed = 0;
-    for ($i = 0; $i < $zip->numFiles; $i++) {
-        $stat = $zip->statIndex($i);
-        if ($stat !== false) {
-            $totalUncompressed += (int)$stat['size'];
-        }
-    }
-    if ($totalUncompressed > $maxUncompressedBytes) {
-        $zip->close();
-        @unlink($tmp);
-        return ['header' => [], 'rows' => [], 'error' => 'ZIP-Archiv ist unkomprimiert zu groß (Limit ' . round($maxUncompressedBytes / 1024 / 1024) . ' MB).'];
     }
     $innerName = null;
     for ($i = 0; $i < $zip->numFiles; $i++) {

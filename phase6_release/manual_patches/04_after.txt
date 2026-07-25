@@ -1,0 +1,29 @@
+    product_recalculate_price_flag($partId);
+
+    // Integrationsphase: automatische Verkaufspreis-Neuberechnung ueber die
+    // bereits vorhandenen Funktionen pricing_rule_match()/pricing_calculate_sell_price()
+    // (private/pricing_rules.php, hier bereits eingebunden). Diese Funktionen
+    // existierten bereits vollstaendig fertig, wurden aber bisher von keiner
+    // Stelle im Code aufgerufen. Wird NUR angewendet, wenn eine passende Regel
+    // existiert UND price_guard den Preis nicht als verdaechtig markiert hat.
+    if ($price !== null && empty($historyFlag['flagged'])) {
+        $part = part_find($partId);
+        if ($part) {
+            $calc = pricing_calculate_sell_price(
+                $price,
+                [
+                    'part_id'     => $partId,
+                    'supplier_id' => $supplierId,
+                    'category'    => $part['category'] ?? null,
+                ],
+                $part['selling_price'] !== null ? (float)$part['selling_price'] : null
+            );
+            if (!empty($calc['applied']) && isset($calc['price'])) {
+                $db->prepare('UPDATE parts SET selling_price = ? WHERE id = ?')
+                   ->execute([$calc['price'], $partId]);
+            }
+        }
+    }
+
+    return $offerId;
+}

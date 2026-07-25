@@ -1,0 +1,34 @@
+function purchase_order_item_receive(int $itemId, int $receivedQuantity): void {
+    $db = get_db();
+    $stmt = $db->prepare('SELECT * FROM purchase_order_items WHERE id = ?');
+    $stmt->execute([$itemId]);
+    $item = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$item) return;
+
+    $newReceived = max(0, min($receivedQuantity, (int)$item['quantity']));
+    $db->prepare('UPDATE purchase_order_items SET quantity_received = ? WHERE id = ?')->execute([$newReceived, $itemId]);
+
+    // Lagerbestand des zentralen Produkts bei Wareneingang erhöhen (nur
+    // die tatsächlich neu eingegangene Differenz, nicht die Gesamtmenge).
+    $delta = $newReceived - (int)$item['quantity_received'];
+    if ($delta !== 0) {
+        // (quantity_received wurde oben bereits überschrieben – Differenz
+        // daher hier separat aus dem VOR der Aktualisierung gelesenen Wert
+        // berechnet, siehe $item['quantity_received'] oben.)
+        $db->prepare('UPDATE parts SET stock_quantity = stock_quantity + ? WHERE id = ?')->execute([$delta, $item['part_id']]);
+    }
+
+    // Bestellstatus aktualisieren: alle Positionen vollständig geliefert?
+    $order = purchase_order_find((int)$item['purchase_order_id']);
+    if ($order) {
+        $items = purchase_order_items_list((int)$order['id']);
+        $allDelivered = true;
+        $anyDelivered = false;
+        foreach ($items as $i) {
+            if ((int)$i['quantity_received'] < (int)$i['quantity']) $allDelivered = false;
+            if ((int)$i['quantity_received'] > 0) $anyDelivered = true;
+        }
+        if ($allDelivered) purchase_order_set_status((int)$order['id'], 'geliefert');
+        elseif ($anyDelivered) purchase_order_set_status((int)$order['id'], 'teilweise_geliefert');
+    }
+}
