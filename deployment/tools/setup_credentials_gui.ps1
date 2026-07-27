@@ -20,6 +20,7 @@ $form.MinimumSize = $form.Size
 $form.MaximumSize = $form.Size
 $form.TopMost = $true
 $form.Font = New-Object Drawing.Font('Segoe UI', 9)
+$script:credentialsSaved = $false
 
 $title = New-Object Windows.Forms.Label
 $title.Location = New-Object Drawing.Point(20, 15)
@@ -106,6 +107,11 @@ $form.Controls.Add($cancelButton)
 $form.CancelButton = $cancelButton
 
 $saveButton.Add_Click({
+    if ($script:credentialsSaved) {
+        $form.DialogResult = [Windows.Forms.DialogResult]::OK
+        $form.Close()
+        return
+    }
     try {
         foreach ($required in @('db_host', 'db_port', 'db_name', 'db_user', 'db_password',
             'ftps_host', 'ftps_port', 'ftps_user', 'ftps_path', 'ftps_password')) {
@@ -163,14 +169,15 @@ $saveButton.Add_Click({
         if ($fonedaySecret) {
             $fonedaySecret.Dispose()
         }
-        [Windows.Forms.MessageBox]::Show(
-            'Die projektspezifischen Zugangsdaten wurden sicher gespeichert.',
-            'MZ Tech',
-            [Windows.Forms.MessageBoxButtons]::OK,
-            [Windows.Forms.MessageBoxIcon]::Information
-        ) | Out-Null
-        $form.DialogResult = [Windows.Forms.DialogResult]::OK
-        $form.Close()
+        $script:credentialsSaved = $true
+        foreach ($input in $fields.Values) {
+            $input.Enabled = $false
+        }
+        $fonedayCheckbox.Enabled = $false
+        $title.Text = 'Zugangsdaten erfolgreich gespeichert.'
+        $title.ForeColor = [Drawing.Color]::DarkGreen
+        $saveButton.Text = 'Schließen'
+        $cancelButton.Visible = $false
     }
     catch {
         [Windows.Forms.MessageBox]::Show(

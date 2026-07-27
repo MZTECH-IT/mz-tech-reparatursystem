@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Website-Integration – Terminbuchung &amp; Reparaturanfrage | MZ Tech</title>
+<style>
+  :root {
+    --primary: #0057B8;
+    --primary-dark: #00408a;
+    --dark: #1a1f2b;
+    --muted: #6B7280;
+    --bg: #f5f7fa;
+    --border: #e5e7eb;
+    --green: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--dark);
+    margin: 0;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 20px 80px; }
+  header.page-head {
+    background: linear-gradient(135deg, var(--primary), #0044a3);
+    color: #fff;
+    padding: 40px 32px;
+    border-radius: 14px;
+    margin-bottom: 32px;
+  }
+  header.page-head h1 { margin: 0 0 8px; font-size: 1.7rem; }
+  header.page-head p { margin: 0; color: #dbe8ff; font-size: 1rem; max-width: 600px; }
+  .card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+  }
+  .card h2 {
+    font-size: 1.2rem;
+    margin: 0 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card h2 .num {
+    background: var(--primary);
+    color: #fff;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .85rem;
+    flex-shrink: 0;
+  }
+  .card p.desc { color: var(--muted); font-size: .92rem; margin: 0 0 16px; }
+  .card p.desc code { background: #f1f5f9; padding: 1px 6px; border-radius: 4px; font-size: .85em; }
+  pre {
+    background: #0f1420;
+    color: #d6e2ff;
+    padding: 16px 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: .82rem;
+    line-height: 1.5;
+    position: relative;
+  }
+  pre code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+  .copy-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(255,255,255,.1);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 6px;
+    font-size: .72rem;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,.2); }
+  .copy-btn.copied { background: var(--green); border-color: var(--green); }
+  .pre-wrap { position: relative; margin-bottom: 4px; }
+  .note {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: .87rem;
+    color: #92400e;
+    margin-top: 12px;
+  }
+  .note strong { color: #78350f; }
+  .info {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: .87rem;
+    color: #1e3a8a;
+    margin-top: 12px;
+  }
+  .url-box {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: monospace;
+    font-size: .88rem;
+    margin: 6px 0 14px;
+    word-break: break-all;
+  }
+  .preview {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 14px 0;
+    padding: 20px;
+    background: var(--bg);
+    border-radius: 10px;
+    border: 1px dashed var(--border);
+  }
+  .btn-primary, .btn-outline {
+    display: inline-block;
+    padding: 13px 26px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: .95rem;
+    text-decoration: none;
+    cursor: pointer;
+    border: 2px solid transparent;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-outline { background: #fff; color: var(--primary); border-color: var(--primary); }
+  .btn-outline:hover { background: #eff6ff; }
+  .toc {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 26px;
+    margin-bottom: 28px;
+  }
+  .toc h2 { font-size: 1rem; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc a { color: var(--primary); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  footer { text-align: center; color: var(--muted); font-size: .82rem; margin-top: 40px; }
+  .step { counter-increment: step; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page-head">
+    <h1>Website-Integration: Terminbuchung &amp; Reparaturanfrage</h1>
+    <p>
+      Fertiger HTML-Code zum Einfügen in Ihre bestehende Website (index.html), damit Besucher
+      direkt online einen Termin vereinbaren oder eine Reparatur anfragen können — ohne Anruf,
+      rund um die Uhr.
+    </p>
+  </header>
+
+  <div class="toc">
+    <h2>Inhalt</h2>
+    <ol>
+      <li><a href="#urls">Die zwei neuen Seiten (URLs)</a></li>
+      <li><a href="#hero">Buttons im Hero-Bereich einfügen (empfohlen)</a></li>
+      <li><a href="#nav">Button in der Navigation einfügen</a></li>
+      <li><a href="#kontakt">Buttons im Kontakt-Bereich einfügen</a></li>
+      <li><a href="#floating">Alternative: Schwebender Button (wie WhatsApp-Button)</a></li>
+      <li><a href="#hinweise">Wichtige Hinweise</a></li>
+    </ol>
+  </div>
+
+  <div class="card" id="urls">
+    <h2><span class="num">1</span> Die zwei neuen Seiten</h2>
+    <p class="desc">Ihr Reparatursystem stellt zwei öffentliche Formulare bereit, auf die Sie von Ihrer Website aus verlinken:</p>
+
+    <p><strong>Terminbuchung</strong> — Kunde wählt Datum &amp; Uhrzeit direkt online:</p>
+    <div class="url-box">https://mztech-it.de/repair_neu/public/termin.php</div>
+
+    <p><strong>Reparaturanfrage</strong> — Kunde beschreibt sein Problem, MZ Tech meldet sich zurück:</p>
+    <div class="url-box">https://mztech-it.de/repair_neu/public/anfrage.php</div>
+
+    <div class="info">
+      <strong>Hinweis zum Pfad:</strong> Falls Sie das Reparatursystem später in einen anderen
+      Ordner oder auf eine Subdomain verschieben (z.&nbsp;B. <code>https://buchung.mztech-it.de/</code>),
+      müssen Sie in allen unten stehenden Code-Blöcken nur die URL in den <code>href="…"</code>-Attributen
+      entsprechend anpassen — sonst ändert sich nichts.
+    </div>
+  </div>
+
+  <div class="card" id="hero">
+    <h2><span class="num">2</span> Buttons im Hero-Bereich einfügen (empfohlen)</h2>
+    <p class="desc">
+      Öffnen Sie <code>index.html</code> Ihrer Website und suchen Sie nach <code>class="hero-btns"</code>
+      (im Bereich <code>&lt;section id="hero"&gt;</code>). Ersetzen Sie den bestehenden Block durch diesen:
+    </p>
+
+    <div class="pre-wrap">
+      <pre id="code-hero"><code>&lt;div class="hero-btns"&gt;
+  &lt;a href="https://mztech-it.de/repair_neu/public/termin.php" class="btn-primary"&gt;📅 Termin vereinbaren&lt;/a&gt;
+  &lt;a href="https://mztech-it.de/repair_neu/public/anfrage.php" class="btn-outline"&gt;🔧 Reparatur anfragen&lt;/a&gt;
+  &lt;a href="https://mztech-it.de/repair_neu/public/portal.php" class="btn-outline"&gt;👤 Kundenportal&lt;/a&gt;
+  &lt;a href="https://mztech-it.de/repair_neu/public/portal_business.php" class="btn-outline"&gt;🏢 Firmenkundenportal&lt;/a&gt;
+  &lt;a href="https://mztech-it.de/repair_neu/public/portal_business.php?view=tickets" class="btn-outline"&gt;🎫 Ticket erstellen&lt;/a&gt;
+  &lt;a href="#leistungen" class="btn-outline"&gt;Leistungen ansehen&lt;/a&gt;
+&lt;/div&gt;</code></pre>
+      <button class="copy-btn" data-target="code-hero">Kopieren</button>
+    </div>
+
+    <p class="desc" style="margin-top:14px;">Vorschau, wie das im Browser aussieht:</p>
+    <div class="preview">
+      <a class="btn-primary" href="#" onclick="return false;">📅 Termin vereinbaren</a>
+      <a class="btn-outline" href="#" onclick="return false;">🔧 Reparatur anfragen</a>
+    </div>
+  </div>
+
+  <div class="card" id="nav">
+    <h2><span class="num">3</span> Button in der Navigation einfügen</h2>
+    <p class="desc">
+      Suchen Sie in <code>index.html</code> nach <code>&lt;ul class="nav-links" id="nav-links"&gt;</code>
+      und ersetzen Sie den bisherigen <code>Kontakt</code>-Menüpunkt durch diese zwei Einträge
+      (oder fügen Sie sie zusätzlich ein):
+    </p>
+
+    <div class="pre-wrap">
+      <pre id="code-nav"><code>&lt;li&gt;&lt;a href="https://mztech-it.de/repair_neu/public/termin.php"&gt;Termin vereinbaren&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://mztech-it.de/repair_neu/public/anfrage.php" class="nav-cta"&gt;Reparatur anfragen&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://mztech-it.de/repair_neu/public/portal.php"&gt;Kundenportal&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://mztech-it.de/repair_neu/public/portal_business.php"&gt;Firmenkundenportal&lt;/a&gt;&lt;/li&gt;</code></pre>
+      <button class="copy-btn" data-target="code-nav">Kopieren</button>
+    </div>
+    <div class="note">
+      <strong>Tipp:</strong> Die Klasse <code>nav-cta</code> ist bereits in Ihrem <code>style.css</code>
+      definiert (farblich hervorgehoben) — Sie müssen nichts an der CSS-Datei ändern.
+    </div>
+  </div>
+
+  <div class="card" id="kontakt">
+    <h2><span class="num">4</span> Buttons im Kontakt-Bereich einfügen</h2>
+    <p class="desc">
+      Im Abschnitt <code>&lt;section id="kontakt"&gt;</code> steht aktuell nur ein Kontaktformular.
+      Fügen Sie direkt darüber (z.&nbsp;B. nach <code>&lt;p class="section-sub"&gt;…&lt;/p&gt;</code>) diesen
+      Block mit zwei großen Aktions-Karten ein:
+    </p>
+
+    <div class="pre-wrap">
+      <pre id="code-kontakt"><code>&lt;div style="display:flex;gap:16px;flex-wrap:wrap;margin:24px 0 32px;"&gt;
+  &lt;a href="https://mztech-it.de/repair_neu/public/termin.php"
+     style="flex:1;min-width:260px;background:#fff;border:2px solid #0057B8;border-radius:12px;
+            padding:24px;text-decoration:none;color:#1a1f2b;display:block;"&gt;
+    &lt;div style="font-size:1.8rem;margin-bottom:8px;"&gt;📅&lt;/div&gt;
+    &lt;strong style="font-size:1.1rem;color:#0057B8;"&gt;Termin online vereinbaren&lt;/strong&gt;
+    &lt;p style="margin:8px 0 0;color:#6B7280;font-size:.9rem;"&gt;Wählen Sie direkt einen freien
+       Termin aus unserem Kalender — ganz ohne Anruf.&lt;/p&gt;
+  &lt;/a&gt;
+  &lt;a href="https://mztech-it.de/repair_neu/public/anfrage.php"
+     style="flex:1;min-width:260px;background:#0057B8;border-radius:12px;padding:24px;
+            text-decoration:none;color:#fff;display:block;"&gt;
+    &lt;div style="font-size:1.8rem;margin-bottom:8px;"&gt;🔧&lt;/div&gt;
+    &lt;strong style="font-size:1.1rem;"&gt;Reparatur unverbindlich anfragen&lt;/strong&gt;
+    &lt;p style="margin:8px 0 0;color:#dbe8ff;font-size:.9rem;"&gt;Beschreiben Sie kurz das Problem —
+       wir melden uns mit einem Vorschlag zurück.&lt;/p&gt;
+  &lt;/a&gt;
+&lt;/div&gt;</code></pre>
+      <button class="copy-btn" data-target="code-kontakt">Kopieren</button>
+    </div>
+  </div>
+
+  <div class="card" id="floating">
+    <h2><span class="num">5</span> Alternative: Schwebender Button (wie der WhatsApp-Button)</h2>
+    <p class="desc">
+      Ihre Website hat bereits einen schwebenden WhatsApp-Button unten rechts. Sie können nach dem
+      gleichen Muster einen zweiten schwebenden Button für die Terminbuchung ergänzen. Fügen Sie
+      diesen Code kurz vor <code>&lt;/body&gt;</code> ein (am besten direkt neben dem bestehenden
+      WhatsApp-Button-Code):
+    </p>
+
+    <div class="pre-wrap">
+      <pre id="code-float"><code>&lt;a href="https://mztech-it.de/repair_neu/public/termin.php"
+   style="position:fixed;bottom:96px;right:24px;background:#0057B8;color:#fff;
+          width:56px;height:56px;border-radius:50%;display:flex;align-items:center;
+          justify-content:center;font-size:1.5rem;text-decoration:none;
+          box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:999;"
+   title="Termin vereinbaren"&gt;📅&lt;/a&gt;</code></pre>
+      <button class="copy-btn" data-target="code-float">Kopieren</button>
+    </div>
+    <div class="note">
+      <strong>Empfehlung:</strong> Nutzen Sie entweder die Hero-Buttons (Schritt 2) <em>oder</em> den
+      schwebenden Button — beides gleichzeitig kann auf kleinen Bildschirmen unübersichtlich wirken.
+    </div>
+  </div>
+
+  <div class="card" id="hinweise">
+    <h2><span class="num">6</span> Wichtige Hinweise</h2>
+    <ul style="padding-left:20px; color:#374151; font-size:.92rem;">
+      <li>Die verlinkten Seiten öffnen sich <strong>innerhalb derselben Website</strong> (kein neues
+          Fenster) — Besucher bleiben im gewohnten Look, da beide Formulare farblich an Ihre
+          Website (Blau <code>#0057B8</code>) angepasst sind.</li>
+      <li>Beide Formulare funktionieren <strong>ohne Login</strong> und ohne zusätzliche Kosten.</li>
+      <li>Neue Terminanfragen erscheinen automatisch unter <strong>„Terminanfragen“</strong>, neue
+          Reparaturanfragen unter <strong>„Online-Anfragen“</strong> in Ihrem Admin-Bereich
+          (<code>https://mztech-it.de/repair_neu/public/</code>), inklusive automatischer
+          Bestätigungs-E-Mail an den Kunden.</li>
+      <li>Sie können die Online-Terminbuchung und die Online-Reparaturanfrage jederzeit einzeln in den
+          <strong>Einstellungen</strong> Ihres Admin-Bereichs deaktivieren, falls Sie z.&nbsp;B. zeitweise
+          überlastet sind — die Buttons auf der Website bleiben dann sichtbar, zeigen dem Kunden aber
+          automatisch einen Hinweis, dass die Online-Annahme aktuell pausiert ist.</li>
+      <li>Es ist <strong>keine Änderung an der PHP-Datei <code>contact.php</code></strong> Ihrer
+          bestehenden Website nötig — die neuen Formulare laufen komplett unabhängig im
+          Reparatursystem.</li>
+    </ul>
+  </div>
+
+  <footer>
+    MZ Tech – Website-Integration &middot; Erstellt für die Verknüpfung von mztech-it.de mit dem Reparatur-Verwaltungssystem
+  </footer>
+
+</div>
+
+<script>
+document.querySelectorAll('.copy-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var target = document.getElementById(btn.getAttribute('data-target'));
+    var text = target.innerText;
+    navigator.clipboard.writeText(text).then(function () {
+      btn.classList.add('copied');
+      var old = btn.textContent;
+      btn.textContent = 'Kopiert ✓';
+      setTimeout(function () {
+        btn.classList.remove('copied');
+        btn.textContent = old;
+      }, 1800);
+    });
+  });
+});
+</script>
+
+</body>
+</html>
