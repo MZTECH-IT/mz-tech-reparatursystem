@@ -1,12 +1,18 @@
 [CmdletBinding()]
 param(
-    [switch]$ValidateOnly
+    [switch]$ValidateOnly,
+    [switch]$PortalOnly,
+    [switch]$PreflightOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$packageRoot = Join-Path $projectRoot 'deployment\complete_production_ready'
+$packageRoot = if ($PortalOnly) {
+    Join-Path $projectRoot 'deployment\portal_ticket_ready'
+} else {
+    Join-Path $projectRoot 'deployment\complete_production_ready'
+}
 $runtimeRoot = Join-Path $projectRoot 'deployment\runtime_secure\complete_deployment'
 $php = 'C:\xampp\php\php.exe'
 $credentialTarget = 'MZTech.Reparatursystem.ProductionFTPS.v1'
@@ -69,12 +75,17 @@ function Get-FtpsCredentialData {
         $credential.Secret.Dispose()
         throw 'FTPS-Credential entspricht nicht dem freigegebenen TLS-Ziel.'
     }
+    # Dieses Konto ist serverseitig direkt auf /mztech-it.de/repair_neu/
+    # gechrootet. Innerhalb der FTPS-Sitzung entspricht daher "/" exakt dem
+    # freigegebenen Produktivstamm; der Hostingpfad darf nicht doppelt
+    # vorangestellt werden.
+    $metadata | Add-Member -NotePropertyName effective_base_path -NotePropertyValue ''
     return [pscustomobject]@{ Metadata = $metadata; Secret = $credential.Secret }
 }
 
 function Get-FtpsUri {
     param([object]$Credential, [string]$RelativePath)
-    $base = ([string] $Credential.Metadata.base_path).TrimEnd('/')
+    $base = ([string] $Credential.Metadata.effective_base_path).TrimEnd('/')
     $relative = $RelativePath.Replace('\', '/').TrimStart('/')
     $segments = @("$base/$relative".Split('/') | Where-Object { $_ } | ForEach-Object {
         [uri]::EscapeDataString($_)
@@ -182,16 +193,28 @@ function Get-ByteHash {
 
 function New-ServerRunner {
     $random = New-Object byte[] 24
-    [Security.Cryptography.RandomNumberGenerator]::Fill($random)
-    $runnerId = ([BitConverter]::ToString($random)).Replace('-', '').ToLowerInvariant()
-    [Security.Cryptography.RandomNumberGenerator]::Fill($random)
-    $token = [Convert]::ToBase64String($random).TrimEnd('=').Replace('+', '-').Replace('/', '_')
-    [Array]::Clear($random, 0, $random.Length)
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($random)
+        $runnerId = ([BitConverter]::ToString($random)).Replace('-', '').ToLowerInvariant()
+        $rng.GetBytes($random)
+        $token = [Convert]::ToBase64String($random).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+        [Array]::Clear($random, 0, $random.Length)
+    } finally {
+        $rng.Dispose()
+    }
     $runnerName = "__mzdeploy_$runnerId.php"
     $statusName = "__mzdeploy_$runnerId.json"
 
     $template = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'server_runner_template.php'))
     $template = $template.Replace('__RUNNER_ID__', $runnerId)
+    $template = $template.Replace('__DEPLOYMENT_SCOPE__', $(if ($PreflightOnly) {
+        'preflight'
+    } elseif ($PortalOnly) {
+        'portal'
+    } else {
+        'complete'
+    }))
     $template = $template.Replace('__TOKEN_HASH__', (
         Get-ByteHash -Bytes ([Text.Encoding]::UTF8.GetBytes($token))
     ))
@@ -236,11 +259,29 @@ function Invoke-ServerSqlSequence {
         throw 'Hashprüfung des temporären Runners fehlgeschlagen.'
     }
 
+    Add-Type -AssemblyName System.Windows.Forms
+    Start-Process 'https://mztech-it.de/repair_neu/public/index.php'
+    [Windows.Forms.MessageBox]::Show(
+        'Bitte melden Sie sich im geöffneten Browser als interner Administrator an. Klicken Sie erst danach auf OK.',
+        'MZ Tech – Administratoranmeldung',
+        [Windows.Forms.MessageBoxButtons]::OKCancel,
+        [Windows.Forms.MessageBoxIcon]::Information
+    ) | ForEach-Object {
+        if ($_ -ne [Windows.Forms.DialogResult]::OK) {
+            throw 'Administratoranmeldung wurde abgebrochen.'
+        }
+    }
     Set-Clipboard -Value $Runner.Token
     $url = "https://mztech-it.de/repair_neu/public/$($Runner.RunnerName)"
     Start-Process $url
     Write-Host 'Der geschützte Runner wurde im Browser geöffnet; das einmalige Token liegt in der Zwischenablage.'
-    Write-Host 'Die sechs Schritte müssen dort einzeln bestätigt werden. Geheimnisse werden nicht ausgegeben.'
+    Write-Host ($(if ($PreflightOnly) {
+        'Es wird ausschließlich der lesende Portal-/Ticket-Preflight bestätigt. Geheimnisse werden nicht ausgegeben.'
+    } elseif ($PortalOnly) {
+        'Die drei Portal-/Ticket-Schritte müssen dort einzeln bestätigt werden. Geheimnisse werden nicht ausgegeben.'
+    } else {
+        'Die sechs Schritte müssen dort einzeln bestätigt werden. Geheimnisse werden nicht ausgegeben.'
+    }))
 
     $deadline = (Get-Date).AddMinutes(30)
     $state = ''
@@ -263,6 +304,10 @@ function Invoke-ServerSqlSequence {
             Write-Host "Runnerstatus: $state"
         }
         if ($state -eq 'failed') {
+            $diagnostic = [string] $status.summary.diagnostic
+            if ($diagnostic) {
+                throw "Der serverseitige SQL-Ablauf wurde sicher gestoppt: $diagnostic"
+            }
             throw 'Der serverseitige SQL-Ablauf wurde sicher gestoppt.'
         }
         if ($state -eq 'complete') {
@@ -273,7 +318,7 @@ function Invoke-ServerSqlSequence {
         throw 'Zeitlimit für die manuell zu bestätigenden SQL-Schritte erreicht.'
     }
 
-    Set-Clipboard -Value ''
+    [Windows.Forms.Clipboard]::Clear()
     Remove-FtpsFile -Credential $Credential -RelativePath $runnerRelative
     Remove-FtpsFile -Credential $Credential -RelativePath $statusRelative
     if ($null -ne (Receive-FtpsBytes -Credential $Credential -RelativePath $runnerRelative -AllowMissing) -or
@@ -346,6 +391,10 @@ try {
     $credential = Get-FtpsCredentialData
     $runner = New-ServerRunner
     Invoke-ServerSqlSequence -Credential $credential -Runner $runner
+    if ($PreflightOnly) {
+        Write-Host 'Der ausschließlich lesende Produktiv-Preflight wurde abgeschlossen.' -ForegroundColor Green
+        return
+    }
     $upload = Invoke-ApplicationUpload -Credential $credential
     Write-Host 'Produktivbereitstellung mit Sicherungen und Hashprüfung abgeschlossen.' -ForegroundColor Green
     Write-Host "Sicherungsverzeichnis: $($upload.BackupRoot)"
@@ -354,11 +403,13 @@ try {
     Write-Host $_.Exception.Message
     if ($credential -and $runner) {
         try {
-            Set-Clipboard -Value ''
+            Add-Type -AssemblyName System.Windows.Forms
+            [Windows.Forms.Clipboard]::Clear()
             Remove-FtpsFile -Credential $credential -RelativePath ('public\' + $runner.RunnerName) -AllowMissing
             Remove-FtpsFile -Credential $credential -RelativePath ('private\' + $runner.StatusName) -AllowMissing
         } catch {
-            Write-Host 'Der temporäre Runner muss manuell entfernt und geprüft werden.' -ForegroundColor Red
+            Write-Host ('Der temporäre Runner muss manuell entfernt und geprüft werden: ' +
+                $_.Exception.Message) -ForegroundColor Red
         }
     }
     exit 1

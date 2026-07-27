@@ -16,6 +16,7 @@ public/portal.php
 public/portal_access.php
 public/portal_business.php
 public/portal_guest.php
+public/portal_start.php
 public/portal_ticket_attachment.php
 public/portal_tickets.php
 public/repairs_form.php

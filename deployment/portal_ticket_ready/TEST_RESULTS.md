@@ -28,5 +28,16 @@
 - Browser-/Responsive-Tests: noch nicht produktiv ausgeführt.
 - FTPS-Upload dieses Pakets: noch nicht ausgeführt.
 
+## Produktivversuch
+
+- Explizites FTPS und chroot-internes Produktivziel wurden bestätigt.
+- Der serverseitige, ausschließlich lesende Portal-/Ticket-Preflight wurde
+  gestartet, aber vor erfolgreicher Validierung mit einem Ausführungsfehler
+  sicher gestoppt.
+- Migration, Postcheck, Anwendungsupload, Testkonten und Produktivtests wurden
+  deshalb nicht ausgeführt.
+- Beide temporären Runnerläufe wurden entfernt; Nachprüfung: 0 verbleibende
+  `__mzdeploy_*`-Dateien.
+
 Erfolge für diese nicht ausgeführten Punkte werden ausdrücklich nicht
 behauptet.

@@ -11,6 +11,7 @@ header('X-Frame-Options: DENY');
 header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
 
 const DEPLOYMENT_RUNNER_ID = '__RUNNER_ID__';
+const DEPLOYMENT_SCOPE = '__DEPLOYMENT_SCOPE__';
 const DEPLOYMENT_TOKEN_HASH = '__TOKEN_HASH__';
 const DEPLOYMENT_STATUS_FILE = '__STATUS_FILE__';
 const PORTAL_PREFLIGHT_SQL_B64 = '__PORTAL_PREFLIGHT_B64__';
@@ -370,6 +371,25 @@ function deployment_safe_message(Throwable $error): string
     return 'Der Schritt ist fehlgeschlagen. Es wurden keine weiteren Schritte ausgeführt.';
 }
 
+function deployment_safe_failure_summary(Throwable $error, string $step): array
+{
+    $message = $error->getMessage();
+    $diagnostic = 'Nicht näher offengelegter sicherer Fehler';
+    foreach ([
+        'Preflight-Voraussetzungen weichen ab:',
+        'Postcheck meldet Abweichungen:',
+        'Der Datenbankkontext ist nicht eindeutig korrekt.',
+        'Der Migrations-Abschlussmarker fehlt.',
+        'Der Foneday-Migrations-Abschlussmarker fehlt.',
+    ] as $allowedPrefix) {
+        if (str_starts_with($message, $allowedPrefix)) {
+            $diagnostic = $message;
+            break;
+        }
+    }
+    return ['status' => 'FEHLER', 'step' => $step, 'diagnostic' => $diagnostic];
+}
+
 $notice = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
@@ -394,9 +414,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $deployment['token_verified'] = true;
                 $result = deployment_execute_sql(get_db(), 'portal_preflight');
                 $deployment['summary'] = deployment_validate_preflight($result['rows']);
-                $deployment['state'] = 'portal_preflight_ok';
+                $deployment['state'] = DEPLOYMENT_SCOPE === 'preflight'
+                    ? 'complete'
+                    : 'portal_preflight_ok';
                 deployment_write_status($statusPath, $deployment['state'], $deployment['summary']);
-                $notice = 'Portal-/Ticket-Preflight erfolgreich und ausschließlich lesend abgeschlossen.';
+                $notice = DEPLOYMENT_SCOPE === 'preflight'
+                    ? 'Portal-/Ticket-Preflight erfolgreich. Der Diagnose-Runner kann entfernt werden.'
+                    : 'Portal-/Ticket-Preflight erfolgreich und ausschließlich lesend abgeschlossen.';
             } elseif ($action === 'portal_migration' && $deployment['state'] === 'portal_preflight_ok' &&
                 $deployment['token_verified'] === true) {
                 $result = deployment_execute_sql(get_db(), 'portal_migration');
@@ -408,9 +432,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $deployment['token_verified'] === true) {
                 $result = deployment_execute_sql(get_db(), 'portal_postcheck');
                 $deployment['summary'] = deployment_validate_postcheck($result['rows']);
-                $deployment['state'] = 'portal_postcheck_ok';
+                $deployment['state'] = DEPLOYMENT_SCOPE === 'portal'
+                    ? 'complete'
+                    : 'portal_postcheck_ok';
                 deployment_write_status($statusPath, $deployment['state'], $deployment['summary']);
-                $notice = 'Portal-/Ticket-Postcheck erfolgreich abgeschlossen.';
+                $notice = DEPLOYMENT_SCOPE === 'portal'
+                    ? 'Portal-/Ticket-Postcheck erfolgreich. Der Runner kann jetzt entfernt werden.'
+                    : 'Portal-/Ticket-Postcheck erfolgreich abgeschlossen.';
             } elseif ($action === 'foneday_preflight' && $deployment['state'] === 'portal_postcheck_ok' &&
                 $deployment['token_verified'] === true) {
                 $result = deployment_execute_sql(get_db(), 'foneday_preflight');
@@ -440,7 +468,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (Throwable $error) {
             $deployment['state'] = 'failed';
-            $deployment['summary'] = ['status' => 'FEHLER', 'step' => $action];
+            $deployment['summary'] = deployment_safe_failure_summary($error, $action);
             try {
                 deployment_write_status($statusPath, 'failed', $deployment['summary']);
             } catch (Throwable) {
@@ -537,7 +565,12 @@ $stateLabels = [
       <button type="submit">Foneday-Postcheck ausdrücklich ausführen</button>
     </form>
   <?php elseif ($deployment['state'] === 'complete'): ?>
-    <p>Alle sechs SQL-Schritte wurden erfolgreich geprüft. Dieses temporäre Werkzeug muss jetzt entfernt werden.</p>
+    <p><?= DEPLOYMENT_SCOPE === 'preflight'
+        ? 'Der ausschließlich lesende Preflight wurde geprüft.'
+        : (DEPLOYMENT_SCOPE === 'portal'
+            ? 'Alle drei Portal-/Ticket-SQL-Schritte wurden erfolgreich geprüft.'
+            : 'Alle sechs SQL-Schritte wurden erfolgreich geprüft.') ?>
+      Dieses temporäre Werkzeug muss jetzt entfernt werden.</p>
   <?php else: ?>
     <p>Der Ablauf ist gesperrt. Es werden keine weiteren SQL- oder Uploadschritte ausgeführt.</p>
   <?php endif; ?>
