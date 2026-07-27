@@ -31,6 +31,88 @@ LEFT JOIN INFORMATION_SCHEMA.TABLES actual
   ON actual.TABLE_SCHEMA = @portal_schema AND actual.TABLE_NAME = expected.TABLE_NAME
 ORDER BY expected.TABLE_NAME;
 
+SELECT 'BASE_COLUMN' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
+       CASE WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT' ELSE 'VORHANDEN' END AS status,
+       actual.COLUMN_TYPE, actual.IS_NULLABLE, actual.COLUMN_DEFAULT
+FROM (
+  SELECT 'users' TABLE_NAME, 'id' COLUMN_NAME
+  UNION ALL SELECT 'customers','id'
+  UNION ALL SELECT 'repairs','id'
+  UNION ALL SELECT 'repairs','customer_id'
+  UNION ALL SELECT 'settings','setting_key'
+  UNION ALL SELECT 'settings','setting_value'
+  UNION ALL SELECT 'email_templates','status_key'
+  UNION ALL SELECT 'email_templates','subject'
+  UNION ALL SELECT 'email_templates','body'
+  UNION ALL SELECT 'email_templates','enabled'
+  UNION ALL SELECT 'customer_portal_access','token'
+  UNION ALL SELECT 'customer_accounts','verify_token'
+  UNION ALL SELECT 'customer_accounts','reset_token'
+) expected
+LEFT JOIN INFORMATION_SCHEMA.COLUMNS actual
+  ON actual.TABLE_SCHEMA = @portal_schema
+ AND actual.TABLE_NAME = expected.TABLE_NAME
+ AND actual.COLUMN_NAME = expected.COLUMN_NAME
+ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
+
+SELECT 'UNIQUE_INDEX' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
+       CASE WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT' ELSE 'VORHANDEN' END AS status
+FROM (
+  SELECT 'settings' TABLE_NAME, 'setting_key' COLUMN_NAME
+  UNION ALL SELECT 'email_templates','status_key'
+) expected
+LEFT JOIN INFORMATION_SCHEMA.STATISTICS actual
+  ON actual.TABLE_SCHEMA = @portal_schema
+ AND actual.TABLE_NAME = expected.TABLE_NAME
+ AND actual.COLUMN_NAME = expected.COLUMN_NAME
+ AND actual.NON_UNIQUE = 0
+GROUP BY expected.TABLE_NAME, expected.COLUMN_NAME, actual.COLUMN_NAME
+ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
+
+SELECT 'EXISTING_TARGET_COLUMN' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
+       CASE
+         WHEN present_table.TABLE_NAME IS NULL THEN 'NEUE_TABELLE'
+         WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT'
+         ELSE 'VORHANDEN'
+       END AS status,
+       actual.COLUMN_TYPE
+FROM (
+  SELECT 'companies' TABLE_NAME, 'id' COLUMN_NAME
+  UNION ALL SELECT 'companies','company_name'
+  UNION ALL SELECT 'projects','id'
+  UNION ALL SELECT 'projects','project_number'
+  UNION ALL SELECT 'projects','company_id'
+  UNION ALL SELECT 'projects','name'
+  UNION ALL SELECT 'company_contacts','id'
+  UNION ALL SELECT 'company_contacts','company_id'
+  UNION ALL SELECT 'company_contacts','email'
+  UNION ALL SELECT 'company_contacts','password_hash'
+  UNION ALL SELECT 'company_documents','id'
+  UNION ALL SELECT 'company_documents','company_id'
+  UNION ALL SELECT 'company_documents','filename'
+  UNION ALL SELECT 'tickets','id'
+  UNION ALL SELECT 'tickets','ticket_number'
+  UNION ALL SELECT 'tickets','subject'
+  UNION ALL SELECT 'tickets','status'
+  UNION ALL SELECT 'tickets','priority'
+  UNION ALL SELECT 'tickets','customer_id'
+  UNION ALL SELECT 'ticket_comments','id'
+  UNION ALL SELECT 'ticket_comments','ticket_id'
+  UNION ALL SELECT 'ticket_comments','author_type'
+  UNION ALL SELECT 'ticket_comments','body'
+  UNION ALL SELECT 'ticket_attachments','id'
+  UNION ALL SELECT 'ticket_attachments','ticket_id'
+  UNION ALL SELECT 'ticket_attachments','filename'
+) expected
+LEFT JOIN INFORMATION_SCHEMA.TABLES present_table
+  ON present_table.TABLE_SCHEMA = @portal_schema
+ AND present_table.TABLE_NAME = expected.TABLE_NAME
+LEFT JOIN INFORMATION_SCHEMA.COLUMNS actual
+  ON actual.TABLE_SCHEMA = @portal_schema
+ AND actual.TABLE_NAME = expected.TABLE_NAME
+ AND actual.COLUMN_NAME = expected.COLUMN_NAME
+ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
+
 SELECT expected.TABLE_NAME, expected.COLUMN_NAME,
        CASE WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT' ELSE 'VORHANDEN' END AS status,
        actual.COLUMN_TYPE, actual.IS_NULLABLE, actual.COLUMN_DEFAULT
@@ -65,7 +147,7 @@ LEFT JOIN INFORMATION_SCHEMA.COLUMNS actual
  AND actual.COLUMN_NAME = expected.COLUMN_NAME
 ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
 
-SELECT TABLE_NAME, ENGINE, TABLE_COLLATION
+SELECT 'ENGINE_OR_COLLATION' AS requirement, TABLE_NAME, ENGINE, TABLE_COLLATION
 FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_SCHEMA = @portal_schema
   AND TABLE_NAME IN ('customers','repairs','companies','company_contacts','projects','tickets')

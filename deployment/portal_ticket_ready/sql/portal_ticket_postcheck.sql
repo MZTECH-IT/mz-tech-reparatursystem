@@ -52,6 +52,60 @@ LEFT JOIN INFORMATION_SCHEMA.COLUMNS actual
  AND actual.COLUMN_NAME = expected.COLUMN_NAME
 ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
 
+SELECT expected.TABLE_NAME, expected.COLUMN_NAME,
+       CASE WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT' ELSE 'OK' END AS status,
+       actual.COLUMN_TYPE, actual.IS_NULLABLE, actual.COLUMN_DEFAULT
+FROM (
+  SELECT 'companies' TABLE_NAME, 'id' COLUMN_NAME
+  UNION ALL SELECT 'companies','company_name'
+  UNION ALL SELECT 'projects','id'
+  UNION ALL SELECT 'projects','project_number'
+  UNION ALL SELECT 'projects','company_id'
+  UNION ALL SELECT 'projects','name'
+  UNION ALL SELECT 'company_contacts','id'
+  UNION ALL SELECT 'company_contacts','company_id'
+  UNION ALL SELECT 'company_contacts','email'
+  UNION ALL SELECT 'company_contacts','password_hash'
+  UNION ALL SELECT 'company_documents','id'
+  UNION ALL SELECT 'company_documents','company_id'
+  UNION ALL SELECT 'company_documents','filename'
+  UNION ALL SELECT 'tickets','id'
+  UNION ALL SELECT 'tickets','ticket_number'
+  UNION ALL SELECT 'tickets','subject'
+  UNION ALL SELECT 'tickets','status'
+  UNION ALL SELECT 'tickets','priority'
+  UNION ALL SELECT 'tickets','customer_id'
+  UNION ALL SELECT 'ticket_comments','id'
+  UNION ALL SELECT 'ticket_comments','ticket_id'
+  UNION ALL SELECT 'ticket_comments','author_type'
+  UNION ALL SELECT 'ticket_comments','body'
+  UNION ALL SELECT 'ticket_attachments','id'
+  UNION ALL SELECT 'ticket_attachments','ticket_id'
+  UNION ALL SELECT 'ticket_attachments','filename'
+  UNION ALL SELECT 'ticket_history','id'
+  UNION ALL SELECT 'ticket_history','ticket_id'
+  UNION ALL SELECT 'portal_guest_access','id'
+  UNION ALL SELECT 'portal_guest_access','token_hash'
+  UNION ALL SELECT 'portal_guest_access','scope_type'
+  UNION ALL SELECT 'portal_guest_access','scope_id'
+  UNION ALL SELECT 'portal_activity_log','id'
+  UNION ALL SELECT 'portal_activity_log','event_type'
+  UNION ALL SELECT 'portal_invitations','id'
+  UNION ALL SELECT 'portal_invitations','token_hash'
+  UNION ALL SELECT 'ticket_links','id'
+  UNION ALL SELECT 'ticket_links','ticket_id'
+  UNION ALL SELECT 'company_contact_project_access','company_contact_id'
+  UNION ALL SELECT 'company_contact_project_access','project_id'
+  UNION ALL SELECT 'portal_document_access','id'
+  UNION ALL SELECT 'portal_document_access','document_type'
+  UNION ALL SELECT 'portal_document_access','document_id'
+) expected
+LEFT JOIN INFORMATION_SCHEMA.COLUMNS actual
+  ON actual.TABLE_SCHEMA = @portal_schema
+ AND actual.TABLE_NAME = expected.TABLE_NAME
+ AND actual.COLUMN_NAME = expected.COLUMN_NAME
+ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
+
 SELECT expected.TABLE_NAME, expected.INDEX_NAME,
        CASE WHEN actual.INDEX_NAME IS NULL THEN 'FEHLT' ELSE 'OK' END AS status
 FROM (

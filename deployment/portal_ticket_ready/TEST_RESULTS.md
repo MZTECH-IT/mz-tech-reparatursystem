@@ -2,12 +2,14 @@
 
 ## Erfolgreich ausgeführt
 
-- PHP-Lint: 138 Dateien unter `private/`, `public/` und `tests/`; 0 Fehler.
+- PHP-Lint: 140 Dateien unter `private/`, `public/` und `tests/` sowie der
+  zusätzliche PHP-SQL-Runner; insgesamt 141 Dateien, 0 Fehler.
 - Doppelte Funktionsdefinitionen: Produktions-Static-Check; 0 Fehler.
 - Statische Include-/Require-Pfade: 231 Pfade; 0 Fehler.
 - Interne Menülinks: 35 Links; 0 fehlende Ziele.
 - Portal-/Ticket-Sicherheitstest: 43 Prüfungen; 0 Fehler.
-- Gesamtlauf aller 15 PHP-Testdateien: 15 erfolgreich, 0 fehlgeschlagen.
+- Gesamtlauf aller 16 PHP-Testdateien: 16 erfolgreich, 0 fehlgeschlagen.
+- Credential-/Deployment-Sicherheitstest: 26 Prüfungen; 0 Fehler.
 - Portal-/Ticket-Unit-Test: 20 Token-, Rollen- und Statusprüfungen; 0 Fehler.
 - Lieferanten-, Versand-, Produkt-, Beschaffungs-, Import-, Cron-,
   Worker-Lock- und Wareneingangsregressionstests: erfolgreich.

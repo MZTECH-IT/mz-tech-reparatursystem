@@ -3,6 +3,7 @@
 
 # Sicherungen
 /backups/
+/deployment/runtime_secure/
 *.sql.gz
 *.zip
 
