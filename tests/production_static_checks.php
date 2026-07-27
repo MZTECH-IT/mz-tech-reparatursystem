@@ -77,6 +77,10 @@ $sqlRequired = [
     'production_postcheck.sql',
     'phase2b_03_append_to_update.sql',
     'phase7_complete_integrations.sql',
+    'portal_ticket_preflight.sql',
+    'portal_ticket_migration.sql',
+    'portal_ticket_postcheck.sql',
+    'portal_ticket_rollback.sql',
 ];
 foreach ($sqlRequired as $name) {
     if (!is_file($root . '/sql/' . $name)) {
