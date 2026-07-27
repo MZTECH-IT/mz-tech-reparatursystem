@@ -119,6 +119,17 @@ if ($result['error'] === null && count($result['rows']) === 2) {
     echo "FAIL Test1: " . json_encode($result) . "\n"; $fails++;
 }
 
+if (!class_exists('ZipArchive')) {
+    $result = import_parse_zip('PK', true, ';');
+    if ($result['error'] !== null && str_contains($result['error'], 'ZipArchive')) {
+        echo "SKIP Tests 2-4: PHP-Erweiterung ZipArchive fehlt; die Anwendung meldet diesen Zustand kontrolliert.\n";
+    } else {
+        echo "FAIL ZIP-Fallback: fehlende ZipArchive-Erweiterung wurde nicht kontrolliert gemeldet.\n";
+        $fails++;
+    }
+    exit($fails > 0 ? 1 : 0);
+}
+
 // Test 2 (Regression): normales kleines ZIP mit einer CSV-Datei wird weiterhin akzeptiert
 $zipPath = tempnam(sys_get_temp_dir(), 'testzip');
 $zip = new ZipArchive();
