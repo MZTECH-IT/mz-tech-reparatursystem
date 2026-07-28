@@ -33,6 +33,8 @@ if (!isset($_SESSION[$sessionKey]) || !is_array($_SESSION[$sessionKey])) {
         'state' => 'ready',
         'token_verified' => false,
         'token_attempts' => 0,
+        'session_nonce' => bin2hex(random_bytes(32)),
+        'session_nonce_used' => false,
         'summary' => null,
     ];
 }
@@ -147,23 +149,77 @@ function deployment_split_sql(string $sql): array
 function deployment_execute_sql(PDO $db, string $step): array
 {
     $rows = [];
+    $resultSets = [];
     $statements = deployment_split_sql(deployment_sql($step));
-    foreach ($statements as $statement) {
+    foreach ($statements as $index => $statement) {
+        $checkNumber = $index + 1;
         $keyword = strtoupper((string) strtok(ltrim($statement), " \t\r\n"));
-        if (in_array($keyword, ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN'], true)) {
-            $query = $db->query($statement);
-            foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $rows[] = $row;
+        if ($step === 'portal_preflight' &&
+            !in_array($keyword, ['SELECT', 'SHOW', 'DESCRIBE'], true)) {
+            throw new RuntimeException(
+                'Portal-Preflight-Prüfung ' . $checkNumber .
+                ' SQLSTATE NICHT_VERFUEGBAR Kategorie non_read_only_statement'
+            );
+        }
+        try {
+            if (in_array($keyword, ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN'], true)) {
+                $query = $db->query($statement);
+                $queryRows = $query->fetchAll(PDO::FETCH_ASSOC);
+                $query->closeCursor();
+                foreach ($queryRows as $row) {
+                    $rows[] = $row;
+                }
+                $resultSets[] = ['check_number' => $checkNumber, 'rows' => $queryRows];
+            } else {
+                $db->exec($statement);
+                $resultSets[] = ['check_number' => $checkNumber, 'rows' => []];
             }
-        } else {
-            $db->exec($statement);
+        } catch (PDOException $error) {
+            $state = (string) ($error->errorInfo[0] ?? $error->getCode());
+            if (!preg_match('/^[A-Z0-9]{5}$/', $state)) {
+                $state = 'NICHT_VERFUEGBAR';
+            }
+            $driverCode = (int) ($error->errorInfo[1] ?? 0);
+            $category = match ($driverCode) {
+                1044, 1045, 1142, 1143 => 'permission_or_authentication',
+                1049 => 'database_context',
+                1064 => 'sql_syntax',
+                1146 => 'missing_table',
+                1054 => 'missing_column',
+                2002, 2003, 2006, 2013 => 'database_connection',
+                default => 'database_query',
+            };
+            throw new RuntimeException(
+                'Portal-Preflight-Prüfung ' . $checkNumber .
+                ' SQLSTATE ' . $state . ' Kategorie ' . $category
+            );
         }
     }
-    return ['rows' => $rows, 'statements' => count($statements)];
+    return [
+        'rows' => $rows,
+        'result_sets' => $resultSets,
+        'statements' => count($statements),
+    ];
 }
 
-function deployment_validate_preflight(array $rows): array
+function deployment_validate_preflight(array $execution): array
 {
+    $rows = $execution['rows'] ?? [];
+    $resultSets = $execution['result_sets'] ?? [];
+    if (($execution['statements'] ?? 0) !== 9 || count($resultSets) !== 9) {
+        throw new RuntimeException(
+            'Portal-Preflight-Prüfung 0 SQLSTATE NICHT_VERFUEGBAR Kategorie resultset_count'
+        );
+    }
+    foreach ($resultSets as $index => $resultSet) {
+        if (($resultSet['check_number'] ?? 0) !== $index + 1 ||
+            !is_array($resultSet['rows'] ?? null)) {
+            throw new RuntimeException(
+                'Portal-Preflight-Prüfung ' . ($index + 1) .
+                ' SQLSTATE NICHT_VERFUEGBAR Kategorie resultset_mapping'
+            );
+        }
+    }
     $context = array_values(array_filter($rows, static fn(array $row): bool =>
         array_key_exists('context_status', $row)
     ));
@@ -365,7 +421,8 @@ function deployment_safe_message(Throwable $error): string
         str_contains($message, 'Postcheck meldet Abweichungen') ||
         str_contains($message, 'Integritätsprüfung') ||
         str_contains($message, 'Datenbankkontext') ||
-        str_contains($message, 'Abschlussmarker')) {
+        str_contains($message, 'Abschlussmarker') ||
+        str_starts_with($message, 'Portal-Preflight-Prüfung ')) {
         return htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
     return 'Der Schritt ist fehlgeschlagen. Es wurden keine weiteren Schritte ausgeführt.';
@@ -381,6 +438,7 @@ function deployment_safe_failure_summary(Throwable $error, string $step): array
         'Der Datenbankkontext ist nicht eindeutig korrekt.',
         'Der Migrations-Abschlussmarker fehlt.',
         'Der Foneday-Migrations-Abschlussmarker fehlt.',
+        'Portal-Preflight-Prüfung ',
     ] as $allowedPrefix) {
         if (str_starts_with($message, $allowedPrefix)) {
             $diagnostic = $message;
@@ -400,20 +458,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             if ($action === 'portal_preflight' && $deployment['state'] === 'ready') {
-                if ((int) $deployment['token_attempts'] >= 5) {
-                    throw new RuntimeException('Deployment-Token ist gesperrt.');
-                }
-                $providedToken = (string) ($_POST['deployment_token'] ?? '');
-                $deployment['token_attempts']++;
-                if ($providedToken === '' ||
-                    !hash_equals(DEPLOYMENT_TOKEN_HASH, hash('sha256', $providedToken))) {
+                if (in_array(DEPLOYMENT_SCOPE, ['portal', 'preflight'], true)) {
+                    $providedNonce = (string) ($_POST['deployment_nonce'] ?? '');
+                    if ($deployment['session_nonce_used'] ||
+                        $providedNonce === '' ||
+                        !hash_equals((string) $deployment['session_nonce'], $providedNonce)) {
+                        throw new RuntimeException('Der einmalige Sitzungs-Nonce ist ungültig.');
+                    }
+                    $deployment['session_nonce_used'] = true;
+                    $deployment['session_nonce'] = '';
+                    unset($providedNonce);
+                } else {
+                    if ((int) $deployment['token_attempts'] >= 5) {
+                        throw new RuntimeException('Deployment-Token ist gesperrt.');
+                    }
+                    $providedToken = (string) ($_POST['deployment_token'] ?? '');
+                    $deployment['token_attempts']++;
+                    if ($providedToken === '' ||
+                        !hash_equals(DEPLOYMENT_TOKEN_HASH, hash('sha256', $providedToken))) {
+                        unset($providedToken);
+                        throw new RuntimeException('Deployment-Token ist ungültig.');
+                    }
                     unset($providedToken);
-                    throw new RuntimeException('Deployment-Token ist ungültig.');
                 }
-                unset($providedToken);
                 $deployment['token_verified'] = true;
                 $result = deployment_execute_sql(get_db(), 'portal_preflight');
-                $deployment['summary'] = deployment_validate_preflight($result['rows']);
+                $deployment['summary'] = deployment_validate_preflight($result);
                 $deployment['state'] = DEPLOYMENT_SCOPE === 'preflight'
                     ? 'complete'
                     : 'portal_preflight_ok';
@@ -518,9 +588,13 @@ $stateLabels = [
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="portal_preflight">
       <input type="hidden" name="confirm" value="YES">
-      <label>Einmaliges Deployment-Token
-        <input type="password" name="deployment_token" required autocomplete="one-time-code">
-      </label>
+      <?php if (in_array(DEPLOYMENT_SCOPE, ['portal', 'preflight'], true)): ?>
+        <input type="hidden" name="deployment_nonce" value="<?= h((string) $deployment['session_nonce']) ?>">
+      <?php else: ?>
+        <label>Einmaliges Deployment-Token
+          <input type="password" name="deployment_token" required autocomplete="one-time-code">
+        </label>
+      <?php endif; ?>
       <p>Dieser Schritt führt ausschließlich <code>portal_ticket_preflight.sql</code> lesend aus.</p>
       <button type="submit">Lesenden Preflight ausdrücklich ausführen</button>
     </form>

@@ -271,10 +271,16 @@ function Invoke-ServerSqlSequence {
             throw 'Administratoranmeldung wurde abgebrochen.'
         }
     }
-    Set-Clipboard -Value $Runner.Token
+    if (-not $PortalOnly -and -not $PreflightOnly) {
+        Set-Clipboard -Value $Runner.Token
+    }
     $url = "https://mztech-it.de/repair_neu/public/$($Runner.RunnerName)"
     Start-Process $url
-    Write-Host 'Der geschützte Runner wurde im Browser geöffnet; das einmalige Token liegt in der Zwischenablage.'
+    Write-Host ($(if ($PortalOnly -or $PreflightOnly) {
+        'Der geschützte Runner wurde ohne manuell zu kopierendes Token im Browser geöffnet.'
+    } else {
+        'Der geschützte Runner wurde im Browser geöffnet; das einmalige Token liegt in der Zwischenablage.'
+    }))
     Write-Host ($(if ($PreflightOnly) {
         'Es wird ausschließlich der lesende Portal-/Ticket-Preflight bestätigt. Geheimnisse werden nicht ausgegeben.'
     } elseif ($PortalOnly) {

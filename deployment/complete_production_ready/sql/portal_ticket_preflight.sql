@@ -1,13 +1,14 @@
--- Rein lesender Preflight. Keine Tabellen, Spalten oder Daten werden verändert.
-SET @portal_schema := DATABASE();
-SELECT @portal_schema AS active_schema,
-       CASE WHEN @portal_schema IS NULL OR @portal_schema = ''
+-- Rein lesender Preflight. Neun einzeln ausführbare SELECT-Prüfungen.
+-- Keine Sitzungsvariable, kein SET, kein DDL und kein DML.
+SELECT 1 AS check_number,
+       DATABASE() AS active_schema,
+       CASE WHEN DATABASE() IS NULL OR DATABASE() = ''
             THEN 'FEHLER: In phpMyAdmin zuerst die Produktivdatenbank auswählen'
             ELSE 'OK' END AS context_status;
 
-SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE, TABLE_COLLATION
+SELECT 2 AS check_number, TABLE_SCHEMA, TABLE_NAME, ENGINE, TABLE_COLLATION
 FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_SCHEMA = @portal_schema
+WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME IN (
     'users','customers','repairs','settings','email_templates',
     'customer_portal_access','customer_accounts','portal_login_attempts',
@@ -16,7 +17,7 @@ WHERE TABLE_SCHEMA = @portal_schema
   )
 ORDER BY TABLE_NAME;
 
-SELECT expected.TABLE_NAME,
+SELECT 3 AS check_number, expected.TABLE_NAME,
        CASE WHEN actual.TABLE_NAME IS NULL THEN 'FEHLT' ELSE 'VORHANDEN' END AS status
 FROM (
   SELECT 'users' TABLE_NAME UNION ALL SELECT 'customers' UNION ALL SELECT 'repairs'
@@ -28,10 +29,10 @@ FROM (
   UNION ALL SELECT 'ticket_comments' UNION ALL SELECT 'ticket_attachments'
 ) expected
 LEFT JOIN INFORMATION_SCHEMA.TABLES actual
-  ON actual.TABLE_SCHEMA = @portal_schema AND actual.TABLE_NAME = expected.TABLE_NAME
+  ON actual.TABLE_SCHEMA = DATABASE() AND actual.TABLE_NAME = expected.TABLE_NAME
 ORDER BY expected.TABLE_NAME;
 
-SELECT 'BASE_COLUMN' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
+SELECT 4 AS check_number, 'BASE_COLUMN' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
        CASE WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT' ELSE 'VORHANDEN' END AS status,
        actual.COLUMN_TYPE, actual.IS_NULLABLE, actual.COLUMN_DEFAULT
 FROM (
@@ -50,26 +51,26 @@ FROM (
   UNION ALL SELECT 'customer_accounts','reset_token'
 ) expected
 LEFT JOIN INFORMATION_SCHEMA.COLUMNS actual
-  ON actual.TABLE_SCHEMA = @portal_schema
+  ON actual.TABLE_SCHEMA = DATABASE()
  AND actual.TABLE_NAME = expected.TABLE_NAME
  AND actual.COLUMN_NAME = expected.COLUMN_NAME
 ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
 
-SELECT 'UNIQUE_INDEX' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
+SELECT 5 AS check_number, 'UNIQUE_INDEX' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
        CASE WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT' ELSE 'VORHANDEN' END AS status
 FROM (
   SELECT 'settings' TABLE_NAME, 'setting_key' COLUMN_NAME
   UNION ALL SELECT 'email_templates','status_key'
 ) expected
 LEFT JOIN INFORMATION_SCHEMA.STATISTICS actual
-  ON actual.TABLE_SCHEMA = @portal_schema
+  ON actual.TABLE_SCHEMA = DATABASE()
  AND actual.TABLE_NAME = expected.TABLE_NAME
  AND actual.COLUMN_NAME = expected.COLUMN_NAME
  AND actual.NON_UNIQUE = 0
 GROUP BY expected.TABLE_NAME, expected.COLUMN_NAME, actual.COLUMN_NAME
 ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
 
-SELECT 'EXISTING_TARGET_COLUMN' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
+SELECT 6 AS check_number, 'EXISTING_TARGET_COLUMN' AS requirement, expected.TABLE_NAME, expected.COLUMN_NAME,
        CASE
          WHEN present_table.TABLE_NAME IS NULL THEN 'NEUE_TABELLE'
          WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT'
@@ -105,15 +106,15 @@ FROM (
   UNION ALL SELECT 'ticket_attachments','filename'
 ) expected
 LEFT JOIN INFORMATION_SCHEMA.TABLES present_table
-  ON present_table.TABLE_SCHEMA = @portal_schema
+  ON present_table.TABLE_SCHEMA = DATABASE()
  AND present_table.TABLE_NAME = expected.TABLE_NAME
 LEFT JOIN INFORMATION_SCHEMA.COLUMNS actual
-  ON actual.TABLE_SCHEMA = @portal_schema
+  ON actual.TABLE_SCHEMA = DATABASE()
  AND actual.TABLE_NAME = expected.TABLE_NAME
  AND actual.COLUMN_NAME = expected.COLUMN_NAME
 ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
 
-SELECT expected.TABLE_NAME, expected.COLUMN_NAME,
+SELECT 7 AS check_number, expected.TABLE_NAME, expected.COLUMN_NAME,
        CASE WHEN actual.COLUMN_NAME IS NULL THEN 'FEHLT' ELSE 'VORHANDEN' END AS status,
        actual.COLUMN_TYPE, actual.IS_NULLABLE, actual.COLUMN_DEFAULT
 FROM (
@@ -142,15 +143,17 @@ FROM (
   UNION ALL SELECT 'ticket_attachments','mime_type'
 ) expected
 LEFT JOIN INFORMATION_SCHEMA.COLUMNS actual
-  ON actual.TABLE_SCHEMA = @portal_schema
+  ON actual.TABLE_SCHEMA = DATABASE()
  AND actual.TABLE_NAME = expected.TABLE_NAME
  AND actual.COLUMN_NAME = expected.COLUMN_NAME
 ORDER BY expected.TABLE_NAME, expected.COLUMN_NAME;
 
-SELECT 'ENGINE_OR_COLLATION' AS requirement, TABLE_NAME, ENGINE, TABLE_COLLATION
+SELECT 8 AS check_number, 'ENGINE_OR_COLLATION' AS requirement, TABLE_NAME, ENGINE, TABLE_COLLATION
 FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_SCHEMA = @portal_schema
+WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME IN ('customers','repairs','companies','company_contacts','projects','tickets')
   AND (ENGINE <> 'InnoDB' OR TABLE_COLLATION NOT LIKE 'utf8mb4%');
 
-SELECT 'PREFLIGHT_READ_ONLY_COMPLETE' AS result, @portal_schema AS checked_schema;
+SELECT 9 AS check_number,
+       'PREFLIGHT_READ_ONLY_COMPLETE' AS result,
+       DATABASE() AS checked_schema;
