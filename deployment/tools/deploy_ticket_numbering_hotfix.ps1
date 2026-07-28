@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$ValidateOnly,
-    [ValidateSet('Numbering', 'BusinessActivation')]
+    [ValidateSet('Numbering', 'BusinessActivation', 'BusinessProjectDisplay')]
     [string]$Scope = 'Numbering'
 )
 
@@ -12,6 +12,8 @@ $php = 'C:\xampp\php\php.exe'
 $credentialTarget = 'MZTech.Reparatursystem.ProductionFTPS.v1'
 $relativeFiles = if ($Scope -eq 'BusinessActivation') {
     @('private/companies.php', 'public/companies_form.php')
+} elseif ($Scope -eq 'BusinessProjectDisplay') {
+    @('public/portal_business.php')
 } else {
     @('private/tickets.php', 'private/companies.php')
 }
@@ -37,7 +39,7 @@ function Assert-Prerequisites {
     }
     foreach ($relative in $relativeFiles) {
         if ($relative -eq 'private/config.php' -or
-            $relative -notin @('private/tickets.php', 'private/companies.php', 'public/companies_form.php')) {
+            $relative -notin @('private/tickets.php', 'private/companies.php', 'public/companies_form.php', 'public/portal_business.php')) {
             throw "Unzulässiger Hotfixpfad: $relative"
         }
         $localPath = Join-Path $projectRoot $relative

@@ -613,6 +613,11 @@ $page_title = 'Firmenkundenportal';
         </div>
         <div class="card-body">
           <div style="margin-bottom:12px;"><?= ticket_status_badge($open_ticket['status']) ?> <?= ticket_priority_badge($open_ticket['priority']) ?></div>
+          <?php if (!empty($open_ticket['project_id'])): ?>
+            <p><strong>Projekt:</strong>
+              <?= h(trim(($open_ticket['project_number'] ?? '') . ' – ' . ($open_ticket['project_name'] ?? ''), " –")) ?>
+            </p>
+          <?php endif; ?>
           <?php foreach ($open_ticket_links as $link): ?>
             <span class="badge badge-gray"><?= h($link['link_type']) ?> #<?= (int)$link['link_id'] ?></span>
           <?php endforeach; ?>

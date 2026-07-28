@@ -64,6 +64,7 @@ $assert(str_contains($tickets, 'is_internal = 0'), 'Interne Ticketnotizen werden
 $assert(str_contains($attachment, '!empty($attachment[\'is_internal\'])'), 'Interne Anhänge werden nicht gesperrt.');
 $assert(str_contains($attachment, 'ticket_access_for_customer') && str_contains($attachment, 'ticket_access_for_company'), 'Anhang-Download ohne Mandantenprüfung.');
 $assert(str_contains($businessPortal, "business_can('manage_users')"), 'Firmenbenutzerverwaltung ist nicht rollenbasiert.');
+$assert(str_contains($businessPortal, "\$open_ticket['project_number']") && str_contains($businessPortal, "\$open_ticket['project_name']"), 'Projektzuordnung fehlt im Firmen-Ticketdetail.');
 $assert(str_contains($businessPortal, 'project_id') && str_contains($customerTickets, 'customer_reference'), 'Erweiterte Ticketfelder fehlen in den Portalen.');
 
 foreach (['portal_guest_access','portal_activity_log','portal_invitations','ticket_history','ticket_links','company_contact_project_access'] as $table) {
@@ -80,7 +81,7 @@ foreach (['INSERT','UPDATE','DELETE','ALTER','CREATE','DROP','TRUNCATE','REPLACE
 $assert(!str_contains($website, 'https://mztech-it.de/repair/public/'), 'Website-Integration enthält alte Produktiv-URL.');
 $assert(str_contains($website, '/repair_neu/public/portal_business.php'), 'Firmenportal-Link fehlt.');
 
-echo 'PORTAL_TICKET_STATIC_ASSERTIONS=' . (30 + count($required)) . PHP_EOL;
+echo 'PORTAL_TICKET_STATIC_ASSERTIONS=' . (31 + count($required)) . PHP_EOL;
 echo 'PORTAL_TICKET_STATIC_ERRORS=' . count($errors) . PHP_EOL;
 foreach ($errors as $error) echo "ERROR: $error" . PHP_EOL;
 exit($errors ? 1 : 0);
