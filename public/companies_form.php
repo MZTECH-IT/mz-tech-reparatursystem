@@ -36,6 +36,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'add_contact' && $id) {
         $result = company_contact_create($id, $_POST);
+        if ($result['success'] && !empty($result['activation_link'])) {
+            $_SESSION['business_activation_once'] = [
+                'company_id' => $id,
+                'contact_id' => (int)$result['id'],
+                'link' => (string)$result['activation_link'],
+            ];
+        }
         flash($result['success'] ? 'success' : 'error', $result['message']);
         header('Location: ' . url('companies_form.php') . '?id=' . $id . '#kontakte');
         exit;
@@ -105,6 +112,11 @@ $projects  = $id ? projects_list_for_company($id) : [];
 $documents = $id ? company_documents_list($id) : [];
 $customers = $id ? company_customers($id) : [];
 $all_customers = $db->query("SELECT id, first_name, last_name FROM customers ORDER BY last_name, first_name")->fetchAll(PDO::FETCH_ASSOC);
+$businessActivationOnce = $_SESSION['business_activation_once'] ?? null;
+unset($_SESSION['business_activation_once']);
+if (!$businessActivationOnce || (int)($businessActivationOnce['company_id'] ?? 0) !== $id) {
+    $businessActivationOnce = null;
+}
 
 $page_title = $id ? 'Firma: ' . $company['company_name'] : 'Neue Firma';
 require_once __DIR__ . '/includes/header.php';
@@ -118,6 +130,15 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <?php show_flash(); ?>
+
+<?php if ($businessActivationOnce): ?>
+  <div class="alert alert-warning" id="business-activation-once">
+    <strong>Aktivierungslink – nur jetzt sichtbar:</strong>
+    <input type="text" id="business_activation_link_once" readonly
+           value="<?= h($businessActivationOnce['link']) ?>"
+           onclick="this.select()" style="width:100%;margin-top:8px;">
+  </div>
+<?php endif; ?>
 
 <div class="card" style="margin-bottom:24px;">
   <div class="card-header"><h2 class="card-title">Firmendaten</h2></div>

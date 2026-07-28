@@ -82,6 +82,38 @@ if (command === 'eval') {
     return null;
   });
   process.stdout.write('OK');
+} else if (command === 'set-file') {
+  const selector = Buffer.from(process.argv[4] || '', 'base64').toString('utf8');
+  const filePath = Buffer.from(process.argv[5] || '', 'base64').toString('utf8');
+  await callCdp(target, async (invoke) => {
+    const document = await invoke('DOM.getDocument');
+    const match = await invoke('DOM.querySelector', {
+      nodeId: document.root.nodeId,
+      selector,
+    });
+    if (!match.nodeId) throw new Error('Dateieingabefeld nicht gefunden.');
+    await invoke('DOM.setFileInputFiles', {
+      nodeId: match.nodeId,
+      files: [filePath],
+    });
+    return null;
+  });
+  process.stdout.write('OK');
+} else if (command === 'mobile') {
+  await callCdp(target, async (invoke) => {
+    await invoke('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 2,
+      mobile: true,
+    });
+    await invoke('Emulation.setTouchEmulationEnabled', {
+      enabled: true,
+      maxTouchPoints: 5,
+    });
+    return null;
+  });
+  process.stdout.write('OK');
 } else {
   throw new Error('Unbekannter CDP-Befehl.');
 }

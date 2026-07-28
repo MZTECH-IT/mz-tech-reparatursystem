@@ -13,6 +13,8 @@
  * Vermeidet drei separate Tabellen/Spaltensätze für denselben Zweck.
  */
 
+require_once __DIR__ . '/numbering.php';
+
 function ticket_valid_statuses(): array {
     return ['offen', 'in_bearbeitung', 'wartet_auf_kunde', 'wartet_intern', 'geloest', 'geschlossen', 'storniert'];
 }

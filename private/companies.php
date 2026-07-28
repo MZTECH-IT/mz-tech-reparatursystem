@@ -17,6 +17,8 @@
  */
 
 // ── Firmen (companies) ────────────────────────────────────────────────
+require_once __DIR__ . '/numbering.php';
+
 function companies_list(bool $onlyActive = false): array {
     $sql = 'SELECT c.*,
                    (SELECT COUNT(*) FROM company_contacts cc WHERE cc.company_id = c.id) AS contact_count,
@@ -175,14 +177,14 @@ function company_contact_create(int $companyId, array $data): array {
          VALUES (\'company_contact\', ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))'
     )->execute([$contactId, $email, $token['hash']]);
 
+    $verifyLink = base_app_url() . '/portal_business.php?activate=' . $token['plain'];
     try {
         $company = company_find($companyId);
         if (portal_email_delivery_enabled()) {
-            $verify_link = base_app_url() . '/portal_business.php?activate=' . $token['plain'];
             send_generic_template_email('firmenkontakt_konto_erstellt', [
                 'first_name' => $first_name, 'last_name' => $last_name, 'email' => $email,
             ], [
-                'verify_link' => $verify_link,
+                'verify_link' => $verifyLink,
                 'firma'       => $company['company_name'] ?? get_setting('company_name', 'MZ Tech'),
             ]);
         }
@@ -201,6 +203,7 @@ function company_contact_create(int $companyId, array $data): array {
             ? 'Ansprechpartner wurde angelegt und die Einladung versendet.'
             : 'Ansprechpartner wurde angelegt. Der Portal-E-Mail-Versand ist deaktiviert; die Einladung wurde nicht versendet.',
         'id' => $contactId,
+        'activation_link' => portal_email_delivery_enabled() ? null : $verifyLink,
     ];
 }
 

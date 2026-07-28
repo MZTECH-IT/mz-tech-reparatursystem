@@ -40,6 +40,7 @@ $security = $read('private/portal_security.php');
 $customerAuth = $read('private/customer_auth.php');
 $businessAuth = $read('private/business_auth.php');
 $companies = $read('private/companies.php');
+$companiesForm = $read('public/companies_form.php');
 $tickets = $read('private/tickets.php');
 $businessPortal = $read('public/portal_business.php');
 $customerTickets = $read('public/portal_tickets.php');
@@ -54,6 +55,9 @@ $assert(str_contains($security, 'finfo(FILEINFO_MIME_TYPE)'), 'Upload-MIME-Prüf
 $assert(str_contains($customerAuth, 'verify_token_hash') && str_contains($customerAuth, 'reset_token_hash'), 'Kundentokens werden nicht gehasht verwendet.');
 $assert(str_contains($companies, 'verify_token_hash') && str_contains($companies, 'reset_token_hash'), 'Firmentokens werden nicht gehasht verwendet.');
 $assert(str_contains($businessAuth, 'business_current_company_id') && str_contains($businessAuth, 'portal_role'), 'Firmenmandant/Rolle fehlt.');
+$assert(str_contains($tickets, "require_once __DIR__ . '/numbering.php';"), 'Ticketlogik lädt die Nummerierung nicht selbst.');
+$assert(str_contains($companies, "require_once __DIR__ . '/numbering.php';"), 'Projektlogik lädt die Nummerierung nicht selbst.');
+$assert(str_contains($companies, "'activation_link'") && str_contains($companiesForm, 'business_activation_link_once'), 'Einmaliger Firmen-Aktivierungslink fehlt bei deaktiviertem E-Mail-Versand.');
 $assert(str_contains($tickets, "company_id = ? OR cc.company_id = ?"), 'Firmen-Ticketzugriff filtert nicht serverseitig nach Firma.');
 $assert(str_contains($tickets, "status = 'aktiv' LIMIT 1"), 'Projektwahl wird nicht serverseitig auf aktive Firmenprojekte geprüft.');
 $assert(str_contains($tickets, 'is_internal = 0'), 'Interne Ticketnotizen werden im Portal nicht ausgefiltert.');
@@ -76,7 +80,7 @@ foreach (['INSERT','UPDATE','DELETE','ALTER','CREATE','DROP','TRUNCATE','REPLACE
 $assert(!str_contains($website, 'https://mztech-it.de/repair/public/'), 'Website-Integration enthält alte Produktiv-URL.');
 $assert(str_contains($website, '/repair_neu/public/portal_business.php'), 'Firmenportal-Link fehlt.');
 
-echo 'PORTAL_TICKET_STATIC_ASSERTIONS=' . (27 + count($required)) . PHP_EOL;
+echo 'PORTAL_TICKET_STATIC_ASSERTIONS=' . (30 + count($required)) . PHP_EOL;
 echo 'PORTAL_TICKET_STATIC_ERRORS=' . count($errors) . PHP_EOL;
 foreach ($errors as $error) echo "ERROR: $error" . PHP_EOL;
 exit($errors ? 1 : 0);
