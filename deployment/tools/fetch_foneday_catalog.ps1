@@ -30,16 +30,20 @@ $bstr = [IntPtr]::Zero
 try {
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
     $env:MZTECH_FONEDAY_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-    New-Item -ItemType Directory -Path $runtimeDirectory -Force | Out-Null
-    & $php $fetcher $outputPath
+    if ($ConnectionTestOnly) {
+        & $php $fetcher '--connection-test'
+    } else {
+        New-Item -ItemType Directory -Path $runtimeDirectory -Force | Out-Null
+        & $php $fetcher $outputPath
+    }
     if ($LASTEXITCODE -ne 0) {
         throw 'Der lesende Foneday-Abruf ist fehlgeschlagen.'
     }
-    if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
+    if (-not $ConnectionTestOnly -and
+        -not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
         throw 'Der erwartete lokale Katalog wurde nicht erzeugt.'
     }
     if ($ConnectionTestOnly) {
-        Remove-Item -LiteralPath $outputPath -Force
         Write-Host 'Foneday-Verbindungstest: erfolgreich (ausschließlich GET).' -ForegroundColor Green
     } else {
         Write-Host ('Katalog gespeichert: {0}' -f $outputPath) -ForegroundColor Green

@@ -8,11 +8,13 @@ if (PHP_SAPI !== 'cli') {
 
 require_once dirname(__DIR__, 2) . '/private/foneday.php';
 
-$outputPath = $argv[1] ?? '';
-if ($outputPath === '' || !str_starts_with(
+$argument = $argv[1] ?? '';
+$connectionTestOnly = $argument === '--connection-test';
+$outputPath = $connectionTestOnly ? '' : $argument;
+if (!$connectionTestOnly && ($outputPath === '' || !str_starts_with(
     strtolower(str_replace('/', '\\', $outputPath)),
     strtolower(str_replace('/', '\\', dirname(__DIR__) . '\\runtime_secure\\'))
-)) {
+))) {
     fwrite(STDERR, "Ungültiger sicherer Ausgabepfad.\n");
     exit(2);
 }
@@ -27,6 +29,15 @@ try {
     $client = new FonedayApiClient($token);
     putenv('MZTECH_FONEDAY_TOKEN');
     $token = '';
+    if ($connectionTestOnly) {
+        $result = $client->get('/products', ['page' => 1]);
+        $validJson = $result['data'] !== null;
+        echo 'HTTP_STATUS=' . (int) ($result['http_status'] ?? 0) . PHP_EOL;
+        echo 'GUELTIGE_JSON_ANTWORT=' . ($validJson ? 'JA' : 'NEIN') . PHP_EOL;
+        echo 'API_VERBINDUNG_ERFOLGREICH=' .
+            (!empty($result['success']) ? 'JA' : 'NEIN') . PHP_EOL;
+        exit(!empty($result['success']) ? 0 : 4);
+    }
     $result = $client->getAllProducts();
     if (!$result['success']) {
         fwrite(STDERR, ($result['message'] ?? 'Foneday-Abruf fehlgeschlagen.') . "\n");

@@ -45,11 +45,7 @@ final class FonedayApiClient
         if (!in_array($path, [
             '/products',
             '/products/list/novanl',
-            '/orders',
-            '/addresses',
-            '/shopping-cart',
-            '/invoices',
-        ], true) && !preg_match('#^/(products|invoices)/[A-Za-z0-9._-]+$#', $path)) {
+        ], true) && !preg_match('#^/products/[A-Za-z0-9._-]+$#', $path)) {
             throw new InvalidArgumentException('Nicht freigegebener lesender Foneday-Endpunkt.');
         }
 

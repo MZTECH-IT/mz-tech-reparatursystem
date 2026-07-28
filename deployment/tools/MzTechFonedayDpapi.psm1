@@ -12,9 +12,24 @@ function Set-MzTechPrivateDirectoryAcl {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $security = New-Object Security.AccessControl.DirectorySecurity
-    $security.SetOwner($identity.User)
+    $security = Get-Acl -LiteralPath $Path
+    $rules = @($security.Access)
+    if ($security.AreAccessRulesProtected -and $rules.Count -eq 1) {
+        $ruleSid = $rules[0].IdentityReference.Translate(
+            [Security.Principal.SecurityIdentifier]
+        )
+        if ($ruleSid -eq $identity.User -and
+            $rules[0].AccessControlType -eq
+                [Security.AccessControl.AccessControlType]::Allow -and
+            ($rules[0].FileSystemRights -band
+                [Security.AccessControl.FileSystemRights]::FullControl)) {
+            return
+        }
+    }
     $security.SetAccessRuleProtection($true, $false)
+    foreach ($existingRule in @($security.Access)) {
+        [void] $security.RemoveAccessRuleSpecific($existingRule)
+    }
     $rule = New-Object Security.AccessControl.FileSystemAccessRule(
         $identity.User,
         [Security.AccessControl.FileSystemRights]::FullControl,
@@ -30,9 +45,24 @@ function Set-MzTechPrivateFileAcl {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $security = New-Object Security.AccessControl.FileSecurity
-    $security.SetOwner($identity.User)
+    $security = Get-Acl -LiteralPath $Path
+    $rules = @($security.Access)
+    if ($security.AreAccessRulesProtected -and $rules.Count -eq 1) {
+        $ruleSid = $rules[0].IdentityReference.Translate(
+            [Security.Principal.SecurityIdentifier]
+        )
+        if ($ruleSid -eq $identity.User -and
+            $rules[0].AccessControlType -eq
+                [Security.AccessControl.AccessControlType]::Allow -and
+            ($rules[0].FileSystemRights -band
+                [Security.AccessControl.FileSystemRights]::FullControl)) {
+            return
+        }
+    }
     $security.SetAccessRuleProtection($true, $false)
+    foreach ($existingRule in @($security.Access)) {
+        [void] $security.RemoveAccessRuleSpecific($existingRule)
+    }
     $rule = New-Object Security.AccessControl.FileSystemAccessRule(
         $identity.User,
         [Security.AccessControl.FileSystemRights]::FullControl,
