@@ -25,7 +25,6 @@ require_once $private . '/google_calendar.php';
 // pricing_rules.php – die require_once-Reihenfolge ist daher unkritisch.
 require_once $private . '/suppliers.php';
 require_once $private . '/products.php';
-require_once $private . '/foneday.php';
 require_once $private . '/purchase_orders.php';
 require_once __DIR__ . '/includes/icons.php';
 

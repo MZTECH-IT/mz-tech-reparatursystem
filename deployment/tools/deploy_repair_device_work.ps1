@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$ValidateOnly,
-    [switch]$AuditOnly
+    [switch]$AuditOnly,
+    [string]$SingleFile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -435,6 +436,102 @@ function Invoke-ServerAudit {
     return [pscustomobject]$summary
 }
 
+function Test-CoreHttpHealth {
+    $checks = @(
+        @{ Url = 'https://mztech-it.de/repair_neu/public/index.php'; Expected = 200; Html = $true },
+        @{ Url = 'https://mztech-it.de/repair_neu/public/dashboard.php'; Expected = 302; Html = $false },
+        @{ Url = 'https://mztech-it.de/repair_neu/public/repairs.php'; Expected = 302; Html = $false }
+    )
+    foreach ($check in $checks) {
+        $response = $null
+        try {
+            $request = [Net.HttpWebRequest]::Create([uri]$check.Url)
+            $request.AllowAutoRedirect = $false
+            $request.Timeout = 20000
+            try {
+                $response = $request.GetResponse()
+            } catch [Net.WebException] {
+                if ($_.Exception.Response) { $response = $_.Exception.Response } else { return $false }
+            }
+            if ([int]$response.StatusCode -ne [int]$check.Expected) { return $false }
+            $reader = New-Object IO.StreamReader($response.GetResponseStream())
+            try { $body = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            if ($body -match '"success"\s*:\s*false.*Datenbankfehler|Etwas ist schiefgelaufen') {
+                return $false
+            }
+            if ($check.Html -and $body -notmatch '<html|<!DOCTYPE|<form') { return $false }
+        } finally {
+            if ($response) { $response.Dispose() }
+        }
+    }
+    return $true
+}
+
+function Invoke-SingleFileUpload {
+    param([object]$Credential, [string]$RelativePath)
+    $relative = $RelativePath.Replace('/', '\').TrimStart('\')
+    if ($relative -notmatch '^(private|public)\\' -or $relative -ieq 'private\config.php') {
+        throw 'Die Einzeldatei liegt außerhalb der erlaubten Anwendungsbereiche.'
+    }
+    $source = Join-Path $packageRoot $relative
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        throw 'Die Einzeldatei ist nicht Bestandteil des geprüften Deployment-Pakets.'
+    }
+    $serverBytes = Receive-FtpsBytesWithRetry -Credential $Credential -RelativePath $relative -AllowMissing
+    if ($null -eq $serverBytes) {
+        throw 'Der sichere Einzeldateimodus überschreibt nur vorhandene Dateien.'
+    }
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $backupRoot = Join-Path $projectRoot "backups\production\single_file_$timestamp"
+    $backupPath = Join-Path $backupRoot $relative
+    New-Item -ItemType Directory -Path (Split-Path $backupPath) -Force | Out-Null
+    [IO.File]::WriteAllBytes($backupPath, $serverBytes)
+    $localBytes = [IO.File]::ReadAllBytes($source)
+    try {
+        $manifest = [pscustomobject]@{
+            file = $relative.Replace('\', '/')
+            original_sha256 = Get-ByteHash $serverBytes
+            replacement_sha256 = Get-ByteHash $localBytes
+            upload_verified = $false
+            health_verified = $false
+            rolled_back = $false
+        }
+        $manifestPath = Join-Path $backupRoot 'single_file_manifest.json'
+        $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+        if ($manifest.original_sha256 -ne $manifest.replacement_sha256) {
+            Send-FtpsFile -Credential $Credential -RelativePath $relative -LocalPath $source
+        }
+        $verified = Receive-FtpsBytesWithRetry -Credential $Credential -RelativePath $relative
+        try {
+            if ((Get-ByteHash $verified) -ne $manifest.replacement_sha256) {
+                throw 'Upload-Hashprüfung der Einzeldatei fehlgeschlagen.'
+            }
+        } finally { [Array]::Clear($verified, 0, $verified.Length) }
+        $manifest.upload_verified = $true
+        $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+        if (-not (Test-CoreHttpHealth)) {
+            Send-FtpsFile -Credential $Credential -RelativePath $relative -LocalPath $backupPath
+            $restored = Receive-FtpsBytesWithRetry -Credential $Credential -RelativePath $relative
+            try {
+                if ((Get-ByteHash $restored) -ne $manifest.original_sha256) {
+                    throw 'Automatischer Einzeldatei-Rollback konnte nicht verifiziert werden.'
+                }
+            } finally { [Array]::Clear($restored, 0, $restored.Length) }
+            $manifest.rolled_back = $true
+            $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+            throw "HTTP-Smoke-Test fehlgeschlagen; Einzeldatei wurde zurückgerollt: $relative"
+        }
+        $manifest.health_verified = $true
+        $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+        Write-Host "SINGLE_FILE_VERIFIED=$relative"
+        Write-Host "SINGLE_FILE_BACKUP=$backupRoot"
+    } finally {
+        [Array]::Clear($serverBytes, 0, $serverBytes.Length)
+        [Array]::Clear($localBytes, 0, $localBytes.Length)
+    }
+}
+
 Assert-DeploymentPrerequisites
 if ($ValidateOnly) {
     Write-Host 'Lokale Deployment-Prüfung erfolgreich; keine Credentials oder Netzwerke verwendet.'
@@ -451,6 +548,10 @@ try {
         Write-Host "SERVER_AUDIT_IDENTICAL=$($audit.identical)"
         Write-Host "SERVER_AUDIT_DIFFERENT=$($audit.different)"
         Write-Host "SERVER_AUDIT_MISSING=$($audit.missing)"
+        return
+    }
+    if ($SingleFile) {
+        Invoke-SingleFileUpload -Credential $credential -RelativePath $SingleFile
         return
     }
     $runner = New-ServerRunner
