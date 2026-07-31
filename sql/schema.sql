@@ -68,6 +68,42 @@ CREATE TABLE IF NOT EXISTS `customers` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------
+-- Zentrale Gerätearten-Stammdaten
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `device_types` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `technical_key` VARCHAR(80)  NOT NULL,
+  `display_name`  VARCHAR(100) NOT NULL,
+  `category`      VARCHAR(100) DEFAULT NULL,
+  `sort_order`    SMALLINT UNSIGNED NOT NULL DEFAULT 100,
+  `is_active`     TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_device_types_key` (`technical_key`),
+  KEY `idx_device_types_active_sort` (`is_active`,`sort_order`,`display_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `device_types` (`technical_key`,`display_name`,`category`,`sort_order`,`is_active`) VALUES
+('smartphone','Smartphone','Mobilgeräte',10,1),
+('tablet','Tablet','Mobilgeräte',20,1),
+('pc','PC','Computer',30,1),
+('laptop','Laptop','Computer',40,1),
+('fernseher','Fernseher','Unterhaltungselektronik',50,1),
+('monitor','Monitor','Computer',60,1),
+('hifi_anlage','HiFi-Anlage','Unterhaltungselektronik',70,1),
+('verstaerker','Verstärker','Unterhaltungselektronik',80,1),
+('radio','Radio','Unterhaltungselektronik',90,1),
+('dvd_bluray_player','DVD-/Blu-ray-Player','Unterhaltungselektronik',100,1),
+('spielkonsole','Spielkonsole','Gaming',110,1),
+('controller','Controller','Gaming',120,1),
+('smartwatch','Smartwatch','Mobilgeräte',130,1),
+('firmenhardware','Firmenhardware','Firmenkunden',140,1),
+('it_service','IT-Service','Dienstleistung',150,1),
+('sonstiges','Sonstiges','Sonstiges',999,1)
+ON DUPLICATE KEY UPDATE `technical_key` = VALUES(`technical_key`);
+
+-- -----------------------------------------------------
 -- Reparaturen
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `repairs` (
@@ -75,6 +111,8 @@ CREATE TABLE IF NOT EXISTS `repairs` (
   `repair_number`       VARCHAR(20)      NOT NULL,
   `customer_id`         INT UNSIGNED     NOT NULL,
   `device_type`         VARCHAR(100)     NOT NULL,
+  `device_type_id`      INT UNSIGNED     DEFAULT NULL,
+  `device_type_legacy_value` VARCHAR(100) DEFAULT NULL,
   `manufacturer`        VARCHAR(100)     DEFAULT NULL,
   `model`               VARCHAR(100)     DEFAULT NULL,
   `color`               VARCHAR(50)      DEFAULT NULL,
@@ -84,12 +122,16 @@ CREATE TABLE IF NOT EXISTS `repairs` (
   `problem_type`        VARCHAR(100)     DEFAULT NULL,
   `is_water_damage`     TINYINT(1)       NOT NULL DEFAULT 0,
   `internal_notes`      TEXT             DEFAULT NULL,
+  `performed_work`      TEXT             DEFAULT NULL,
   `status`              ENUM('anfrage_eingegangen','termin_angefragt','termin_bestaetigt','angenommen',
                              'diagnose','kostenvoranschlag','freigabe_ausstehend','ersatzteil_bestellt',
                              'in_reparatur','funktionstest','fertig','abholbereit','abgeholt','storniert',
                              'eingegangen','in_arbeit','warte_auf_teile','repariert')
                         NOT NULL DEFAULT 'angenommen',
   `price`               DECIMAL(10,2)    DEFAULT NULL,
+  `working_hours`       DECIMAL(8,2)     NOT NULL DEFAULT 0.00,
+  `hourly_rate`         DECIMAL(10,2)    NOT NULL DEFAULT 79.00,
+  `labor_cost`          DECIMAL(12,2)    NOT NULL DEFAULT 0.00,
   `advance_payment`     DECIMAL(10,2)    NOT NULL DEFAULT 0.00,
   `technician_id`       INT UNSIGNED     DEFAULT NULL,
   `passcode_encrypted`  TEXT             DEFAULT NULL,
@@ -107,9 +149,11 @@ CREATE TABLE IF NOT EXISTS `repairs` (
   KEY `idx_status`     (`status`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_technician` (`technician_id`),
+  KEY `idx_repairs_device_type_id` (`device_type_id`),
   CONSTRAINT `fk_repairs_customer`   FOREIGN KEY (`customer_id`)   REFERENCES `customers` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_repairs_technician` FOREIGN KEY (`technician_id`) REFERENCES `users`     (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_repairs_creator`    FOREIGN KEY (`created_by`)    REFERENCES `users`     (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_repairs_creator`    FOREIGN KEY (`created_by`)    REFERENCES `users`     (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_repairs_device_type` FOREIGN KEY (`device_type_id`) REFERENCES `device_types` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------
@@ -486,9 +530,13 @@ CREATE TABLE IF NOT EXISTS `customer_accounts` (
   `email`          VARCHAR(190) NOT NULL,
   `password_hash`  VARCHAR(255) NOT NULL,
   `is_verified`    TINYINT(1)   NOT NULL DEFAULT 0,
+  `verified_at`    DATETIME     DEFAULT NULL,
+  `verified_by`    INT UNSIGNED DEFAULT NULL,
   `verify_token`   VARCHAR(64)  DEFAULT NULL,
+  `verify_token_hash` CHAR(64)  DEFAULT NULL,
   `verify_expires` DATETIME     DEFAULT NULL,
   `reset_token`    VARCHAR(64)  DEFAULT NULL,
+  `reset_token_hash` CHAR(64)   DEFAULT NULL,
   `reset_expires`  DATETIME     DEFAULT NULL,
   `is_active`      TINYINT(1)   NOT NULL DEFAULT 1,
   `last_login_at`  DATETIME     DEFAULT NULL,
@@ -499,7 +547,9 @@ CREATE TABLE IF NOT EXISTS `customer_accounts` (
   UNIQUE KEY `uq_account_email`    (`email`),
   UNIQUE KEY `uq_account_customer` (`customer_id`),
   KEY `idx_verify_token` (`verify_token`),
+  KEY `idx_customer_accounts_verify_hash` (`verify_token_hash`),
   KEY `idx_reset_token`  (`reset_token`),
+  KEY `idx_customer_accounts_reset_hash` (`reset_token_hash`),
   CONSTRAINT `fk_account_customer` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
