@@ -2,14 +2,16 @@
 param(
     [switch]$ValidateOnly,
     [switch]$AuditOnly,
-    [string]$SingleFile
+    [string]$SingleFile,
+    [switch]$BusinessDocuments,
+    [switch]$DiagnosticOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$packageRoot = Join-Path $projectRoot 'deployment\repair_device_work_ready'
-$runtimeRoot = Join-Path $projectRoot 'deployment\runtime_secure\repair_device_work'
+$packageRoot = Join-Path $projectRoot $(if ($BusinessDocuments) { 'deployment\business_documents_ready' } else { 'deployment\repair_device_work_ready' })
+$runtimeRoot = Join-Path $projectRoot $(if ($BusinessDocuments) { 'deployment\runtime_secure\business_documents' } else { 'deployment\runtime_secure\repair_device_work' })
 $php = 'C:\xampp\php\php.exe'
 $credentialTarget = 'MZTech.Reparatursystem.ProductionFTPS.v1'
 
@@ -19,17 +21,17 @@ function Assert-DeploymentPrerequisites {
     if ($projectRoot -ne 'M:\MZ_Tech_Reparatursystem') {
         throw 'Falscher Projektpfad.'
     }
-    foreach ($path in @(
+    $sqlPrerequisites = if ($BusinessDocuments) {
+        @('business_documents_preflight.sql','business_documents_migration.sql','business_documents_postcheck.sql')
+    } else {
+        @('repair_device_work_preflight.sql','repair_device_work_migration.sql','repair_device_work_postcheck.sql','account_verification_preflight.sql','account_verification_migration.sql','account_verification_postcheck.sql')
+    }
+    $requiredPaths = @(
         $packageRoot,
         $php,
-        (Join-Path $PSScriptRoot 'repair_account_runner_template.php'),
-        (Join-Path $projectRoot 'sql\repair_device_work_preflight.sql'),
-        (Join-Path $projectRoot 'sql\repair_device_work_migration.sql'),
-        (Join-Path $projectRoot 'sql\repair_device_work_postcheck.sql'),
-        (Join-Path $projectRoot 'sql\account_verification_preflight.sql'),
-        (Join-Path $projectRoot 'sql\account_verification_migration.sql'),
-        (Join-Path $projectRoot 'sql\account_verification_postcheck.sql')
-    )) {
+        (Join-Path $PSScriptRoot 'repair_account_runner_template.php')
+    ) + @($sqlPrerequisites | ForEach-Object { Join-Path $projectRoot ('sql\' + $_) })
+    foreach ($path in $requiredPaths) {
         if (-not (Test-Path -LiteralPath $path)) {
             throw "Erforderlicher Pfad fehlt: $path"
         }
@@ -248,19 +250,21 @@ function New-ServerRunner {
 
     $template = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'repair_account_runner_template.php'))
     $template = $template.Replace('__RUNNER_ID__', $runnerId)
-    $template = $template.Replace('__DEPLOYMENT_SCOPE__', 'complete')
+    $template = $template.Replace('__DEPLOYMENT_SCOPE__', $(if ($DiagnosticOnly) { 'preflight' } elseif ($BusinessDocuments) { 'portal' } else { 'complete' }))
     $template = $template.Replace('__TOKEN_HASH__', (
         Get-ByteHash -Bytes ([Text.Encoding]::UTF8.GetBytes($token))
     ))
     $template = $template.Replace('__STATUS_FILE__', $statusName)
-    $sqlMap = @{
-        PORTAL_PREFLIGHT = 'repair_device_work_preflight.sql'
-        PORTAL_MIGRATION = 'repair_device_work_migration.sql'
-        PORTAL_POSTCHECK = 'repair_device_work_postcheck.sql'
-        FONEDAY_PREFLIGHT = 'account_verification_preflight.sql'
-        FONEDAY_MIGRATION = 'account_verification_migration.sql'
-        FONEDAY_POSTCHECK = 'account_verification_postcheck.sql'
-    }
+    $sqlMap = if ($BusinessDocuments -and $DiagnosticOnly) { @{
+        PORTAL_PREFLIGHT = 'business_documents_postcheck.sql'; PORTAL_MIGRATION = 'business_documents_migration.sql'; PORTAL_POSTCHECK = 'business_documents_postcheck.sql'
+        FONEDAY_PREFLIGHT = 'business_documents_preflight.sql'; FONEDAY_MIGRATION = 'business_documents_preflight.sql'; FONEDAY_POSTCHECK = 'business_documents_postcheck.sql'
+    } } elseif ($BusinessDocuments) { @{
+        PORTAL_PREFLIGHT = 'business_documents_preflight.sql'; PORTAL_MIGRATION = 'business_documents_migration.sql'; PORTAL_POSTCHECK = 'business_documents_postcheck.sql'
+        FONEDAY_PREFLIGHT = 'business_documents_preflight.sql'; FONEDAY_MIGRATION = 'business_documents_preflight.sql'; FONEDAY_POSTCHECK = 'business_documents_postcheck.sql'
+    } } else { @{
+        PORTAL_PREFLIGHT = 'repair_device_work_preflight.sql'; PORTAL_MIGRATION = 'repair_device_work_migration.sql'; PORTAL_POSTCHECK = 'repair_device_work_postcheck.sql'
+        FONEDAY_PREFLIGHT = 'account_verification_preflight.sql'; FONEDAY_MIGRATION = 'account_verification_migration.sql'; FONEDAY_POSTCHECK = 'account_verification_postcheck.sql'
+    } }
     foreach ($key in $sqlMap.Keys) {
         $bytes = [IO.File]::ReadAllBytes((Join-Path $projectRoot ('sql\' + $sqlMap[$key])))
         $template = $template.Replace("__${key}_B64__", [Convert]::ToBase64String($bytes))
@@ -308,7 +312,7 @@ function Invoke-ServerSqlSequence {
     $url = "https://mztech-it.de/repair_neu/public/$($Runner.RunnerName)"
     Start-Process $url
     Write-Host 'Der geschützte Runner wurde mit serverseitigem Sitzungs-Nonce geöffnet.'
-    Write-Host 'Die sechs Reparatur-/Konto-Schritte müssen dort einzeln bestätigt werden. Geheimnisse werden nicht ausgegeben.'
+    Write-Host $(if ($BusinessDocuments) { 'Die drei Dokument-/Abrechnungsschritte müssen dort einzeln bestätigt werden. Geheimnisse werden nicht ausgegeben.' } else { 'Die sechs Reparatur-/Konto-Schritte müssen dort einzeln bestätigt werden. Geheimnisse werden nicht ausgegeben.' })
 
     $deadline = (Get-Date).AddMinutes(30)
     $state = ''
@@ -360,7 +364,7 @@ function Invoke-ApplicationUpload {
     $files = @(Get-ChildItem -LiteralPath $roots -Recurse -File | Sort-Object FullName)
     $prefix = $packageRoot.TrimEnd('\') + '\'
     $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-    $backupRoot = Join-Path $projectRoot "backups\production\repair_device_work_$timestamp"
+    $backupRoot = Join-Path $projectRoot $(if ($BusinessDocuments) { "backups\production\business_documents_$timestamp" } else { "backups\production\repair_device_work_$timestamp" })
     $manifest = @()
 
     foreach ($file in $files) {
@@ -556,6 +560,10 @@ try {
     }
     $runner = New-ServerRunner
     Invoke-ServerSqlSequence -Credential $credential -Runner $runner
+    if ($DiagnosticOnly) {
+        Write-Host 'Rein lesende Produktivdiagnose abgeschlossen; keine Migration und kein Anwendungsupload ausgeführt.'
+        return
+    }
     $upload = Invoke-ApplicationUpload -Credential $credential
     Write-Host 'Produktivbereitstellung mit Sicherungen und Hashprüfung abgeschlossen.' -ForegroundColor Green
     Write-Host "Sicherungsverzeichnis: $($upload.BackupRoot)"

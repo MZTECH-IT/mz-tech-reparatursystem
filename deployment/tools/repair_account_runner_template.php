@@ -157,7 +157,7 @@ function deployment_execute_sql(PDO $db, string $step): array
         if (in_array($step, ['portal_preflight', 'portal_postcheck', 'foneday_preflight', 'foneday_postcheck'], true) &&
             !in_array($keyword, ['SELECT', 'SHOW', 'DESCRIBE'], true)) {
             throw new RuntimeException(
-                'Portal-Preflight-Prüfung ' . $checkNumber .
+                'SQL-Pruefung ' . $checkNumber .
                 ' SQLSTATE NICHT_VERFUEGBAR Kategorie non_read_only_statement'
             );
         }
@@ -190,7 +190,7 @@ function deployment_execute_sql(PDO $db, string $step): array
                 default => 'database_query',
             };
             throw new RuntimeException(
-                'Portal-Preflight-Prüfung ' . $checkNumber .
+                'SQL-Pruefung ' . $checkNumber .
                 ' SQLSTATE ' . $state . ' Kategorie ' . $category
             );
         }
@@ -214,8 +214,8 @@ function deployment_validate_preflight(array $execution): array
     }
     $missing = [];
     foreach ($rows as $row) {
-        if (in_array(($row['status'] ?? ''), ['FEHLT', 'FEHLER'], true)) {
-            $missing[] = ($row['table_name'] ?? 'Objekt') . '.' . ($row['column_name'] ?? '');
+        if (in_array(($row['status'] ?? ''), ['FEHLT', 'FEHLER', 'ABWEICHUNG'], true)) {
+            $missing[] = ($row['table_name'] ?? $row['setting_key'] ?? 'Objekt') . '.' . ($row['column_name'] ?? $row['index_name'] ?? '');
         }
     }
     if ($missing !== []) {
@@ -249,12 +249,16 @@ function deployment_validate_postcheck(array $rows): array
     $missing = [];
     $violations = 0;
     foreach ($rows as $row) {
-        if (in_array(($row['status'] ?? ''), ['FEHLT', 'FEHLER'], true)) {
-            $missing[] = ($row['table_name'] ?? 'Tabelle') . '.' .
-                ($row['column_name'] ?? 'Objekt');
+        if (in_array(($row['status'] ?? ''), ['FEHLT', 'FEHLER', 'ABWEICHUNG'], true)) {
+            $missing[] = ($row['table_name'] ?? $row['setting_key'] ?? 'Tabelle') . '.' .
+                ($row['column_name'] ?? $row['index_name'] ?? 'Objekt');
         }
         $violations += (int)($row['repairs_without_device_type_id'] ?? 0);
         $violations += (int)($row['invalid_negative_labor_values'] ?? 0);
+        $violations += (int)($row['invalid_markups'] ?? 0);
+        $violations += (int)($row['invalid_payments'] ?? 0);
+        $violations += (int)($row['null_advance_payments'] ?? 0);
+        $violations += (int)($row['invalid_small_business_quotes'] ?? 0);
     }
     $context = array_values(array_filter($rows, static fn(array $row): bool =>
         array_key_exists('active_schema', $row)
@@ -354,7 +358,7 @@ function deployment_safe_message(Throwable $error): string
         str_contains($message, 'Integritätsprüfung') ||
         str_contains($message, 'Datenbankkontext') ||
         str_contains($message, 'Abschlussmarker') ||
-        str_starts_with($message, 'Portal-Preflight-Prüfung ')) {
+        str_starts_with($message, 'SQL-Pruefung ')) {
         return htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
     return 'Der Schritt ist fehlgeschlagen. Es wurden keine weiteren Schritte ausgeführt.';
@@ -371,7 +375,7 @@ function deployment_safe_failure_summary(Throwable $error, string $step): array
         'Der Migrations-Abschlussmarker fehlt.',
         'Der Foneday-Migrations-Abschlussmarker fehlt.',
         'Der Konto-Migrations-Abschlussmarker fehlt.',
-        'Portal-Preflight-Prüfung ',
+        'SQL-Pruefung ',
     ] as $allowedPrefix) {
         if (str_starts_with($message, $allowedPrefix)) {
             $diagnostic = $message;
