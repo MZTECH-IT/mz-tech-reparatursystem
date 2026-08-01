@@ -108,11 +108,19 @@ try {
         $identical = 0
         foreach ($relative in $files) {
             $remote = Receive-FtpsBytes $credential $relative
-            $local = [IO.File]::ReadAllBytes((Join-Path $root $relative))
+            $auditFile = Join-Path ([IO.Path]::GetTempPath()) ('mztech_portal_audit_' + [guid]::NewGuid().ToString('N'))
             try {
-                if ((Get-BytesHash $remote) -ne (Get-BytesHash $local)) { throw "Produktivdatei weicht ab: $relative" }
+                [IO.File]::WriteAllBytes($auditFile, $remote)
+                $remoteBlobHash = (& git hash-object ('--path=' + $relative) -- $auditFile).Trim()
+                $headBlobHash = (& git rev-parse ('HEAD:' + $relative)).Trim()
+                if ($LASTEXITCODE -ne 0 -or $remoteBlobHash -ne $headBlobHash) {
+                    throw "Produktivdatei weicht inhaltlich ab: $relative"
+                }
                 $identical++
-            } finally { [Array]::Clear($remote,0,$remote.Length); [Array]::Clear($local,0,$local.Length) }
+            } finally {
+                [Array]::Clear($remote,0,$remote.Length)
+                if (Test-Path -LiteralPath $auditFile) { Remove-Item -LiteralPath $auditFile -Force }
+            }
         }
         Write-Output "PORTAL_DOCUMENT_SERVER_FILES_IDENTICAL=$identical"
         exit 0
