@@ -28,14 +28,14 @@ if (!preg_match(
 }
 
 if (!preg_match(
-    '/function deployment_validate_preflight\(array \$execution\): array\s*\{.*?\n\}\n\nfunction deployment_validate_migration/s',
+    '/function deployment_validate_preflight\(array \$execution\): array\s*\{.*?\R\}\R\Rfunction deployment_validate_migration/s',
     $template,
     $validatorMatch
 )) {
     $failures[] = 'Preflight-Validator nicht extrahierbar';
 } else {
     $validatorSource = preg_replace(
-        '/\n\nfunction deployment_validate_migration[\s\S]*$/',
+        '/\R\Rfunction deployment_validate_migration[\s\S]*$/',
         '',
         $validatorMatch[0]
     );
