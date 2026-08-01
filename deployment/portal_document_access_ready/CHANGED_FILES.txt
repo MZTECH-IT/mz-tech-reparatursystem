@@ -1,0 +1,6 @@
+﻿private/pdf_common.php
+public/pdf/angebot.php
+public/pdf/rechnung.php
+public/pdf/kostenvoranschlag.php
+public/portal.php
+public/portal_business.php
