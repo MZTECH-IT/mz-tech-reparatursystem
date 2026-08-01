@@ -40,6 +40,13 @@ async function callCdp(target, method, params = {}) {
 }
 
 const pages = await targets();
+if (command === 'new-tab') {
+  const url = Buffer.from(process.argv[3] || '', 'base64').toString('utf8');
+  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' });
+  if (!response.ok) throw new Error(`CDP HTTP ${response.status}`);
+  process.stdout.write('OK');
+  process.exit(0);
+}
 if (command === 'list' || command === 'list-redacted') {
   const redactUrl = (value) => {
     if (command === 'list') return value;
@@ -114,6 +121,23 @@ if (command === 'eval') {
     return null;
   });
   process.stdout.write('OK');
+} else if (command === 'revisit-activation') {
+  const kind = process.argv[4] || '';
+  const result = await callCdp(target, async (invoke) => {
+    const history = await invoke('Page.getNavigationHistory');
+    const marker = kind === 'company' ? '?activate=' : '?verify=';
+    const entry = [...(history.entries || [])].reverse().find((item) =>
+      String(item.url || '').includes(marker));
+    if (!entry) return { found: false, rejectedAsUsed: false };
+    await invoke('Page.navigate', { url: entry.url });
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    const evaluation = await invoke('Runtime.evaluate', {
+      expression: `document.body.innerText.includes('Dieses Konto wurde bereits aktiviert.')`,
+      returnByValue: true,
+    });
+    return { found: true, rejectedAsUsed: evaluation.result?.value === true };
+  });
+  process.stdout.write(JSON.stringify(result));
 } else {
   throw new Error('Unbekannter CDP-Befehl.');
 }

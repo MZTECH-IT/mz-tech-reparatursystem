@@ -1,0 +1,12 @@
+﻿private/mailer.php
+private/account_verification.php
+private/portal_security.php
+private/customer_auth.php
+private/companies.php
+public/companies_form.php
+public/portal_access.php
+public/settings.php
+sql/activation_email_preflight.sql
+sql/activation_email_migration.sql
+sql/activation_email_postcheck.sql
+sql/activation_email_rollback.sql

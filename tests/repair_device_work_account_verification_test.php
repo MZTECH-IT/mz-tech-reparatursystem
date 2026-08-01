@@ -78,8 +78,11 @@ foreach ([
     'portal_account_create_activation',
     'portal_account_revoke_activation',
     'portal_account_send_activation',
+    'portal_account_deactivate',
+    'portal_activation_delivery_log',
+    'portal_activation_resend_wait_seconds',
     'portal_token_hash',
-    'DATE_ADD(NOW(), INTERVAL 72 HOUR)',
+    'portal_activation_lifetime_hours',
 ] as $needle) {
     $assert(str_contains($verification, $needle), "Konto-Verifizierung enthält {$needle}");
 }
@@ -88,6 +91,7 @@ $assert(!str_contains($verification, 'verify_token = ?'), 'Neue Aktivierungstoke
 foreach ([
     'sql/repair_device_work_preflight.sql',
     'sql/account_verification_preflight.sql',
+    'sql/activation_email_preflight.sql',
 ] as $relative) {
     $sql = (string)file_get_contents($root . '/' . $relative);
     $withoutComments = preg_replace('/^\s*--.*$/m', '', $sql);
@@ -97,6 +101,7 @@ foreach ([
 foreach ([
     'sql/repair_device_work_migration.sql',
     'sql/account_verification_migration.sql',
+    'sql/activation_email_migration.sql',
 ] as $relative) {
     $sql = (string)file_get_contents($root . '/' . $relative);
     $assert(!preg_match('/\bDROP\s+(TABLE|COLUMN)\b/i', $sql), "{$relative} enthält keinen destruktiven DROP");
